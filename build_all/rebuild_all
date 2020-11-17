@@ -531,23 +531,23 @@ cd $FWPATH
 make clean
 cd $DIR
 
-#################### CHEAP_FOCER_2 ########################
+#################### CHEAP_FOCER_2_09 ########################
 
-COPYDIR=CHEAP_FOCER_2
+COPYDIR=CHEAP_FOCER_2_09
 mkdir -p $COPYDIR
 rm -f $COPYDIR/*
 
 # default
 cd $FWPATH
 touch conf_general.h
-make -j8 build_args='-DHW_SOURCE=\"hw_Cheap_FOCer_2.c\" -DHW_HEADER=\"hw_Cheap_FOCer_2.h\"' USE_VERBOSE_COMPILE=no
+make -j8 build_args='-DHW_SOURCE=\"hw_Cheap_FOCer_2_09.c\" -DHW_HEADER=\"hw_Cheap_FOCer_2_09.h\"' USE_VERBOSE_COMPILE=no
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
 
 # default with HW limits disables
 cd $FWPATH
 touch conf_general.h
-make -j8 build_args='-DDISABLE_HW_LIMITS -DHW_SOURCE=\"hw_Cheap_FOCer_2.c\" -DHW_HEADER=\"hw_Cheap_FOCer_2.h\"' USE_VERBOSE_COMPILE=no
+make -j8 build_args='-DDISABLE_HW_LIMITS -DHW_SOURCE=\"hw_Cheap_FOCer_2_09.c\" -DHW_HEADER=\"hw_Cheap_FOCer_2_09.h\"' USE_VERBOSE_COMPILE=no
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default_no_hw_limits.bin
 

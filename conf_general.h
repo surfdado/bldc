@@ -160,8 +160,8 @@
 //#define HW_SOURCE "hw_es19.c"
 //#define HW_HEADER "hw_es19.h"
 
-//#define HW_SOURCE "hw_Cheap_FOCer_2.c"
-//#define HW_HEADER "hw_Cheap_FOCer_2.h"
+//#define HW_SOURCE "hw_Cheap_FOCer_2_09.c"
+//#define HW_HEADER "hw_Cheap_FOCer_2_09.h"
 
 #endif
 
