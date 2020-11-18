@@ -21,10 +21,10 @@
 #define CONF_GENERAL_H_
 
 // Firmware version
-#define FW_VERSION_MAJOR			5
-#define FW_VERSION_MINOR			02
+#define FW_VERSION_MAJOR			42
+#define FW_VERSION_MINOR			0
 // Set to 0 for building a release and iterate during beta test builds
-#define FW_TEST_VERSION_NUMBER		12
+#define FW_TEST_VERSION_NUMBER		1
 
 #include "datatypes.h"
 
