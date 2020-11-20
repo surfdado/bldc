@@ -64,6 +64,11 @@ typedef enum {
 	ON
 } SwitchState;
 
+// Allow me to go 10km/h even below low voltage
+#define TILTBACK_LOW_VOLTAGE_MIN_ERPM 3000
+// Give me another 2 Volts of margin at low speeds before doing tiltback there too
+#define TILTBACK_LOW_VOLTAGE_SLOW_MARGIN 2
+
 // Balance thread
 static THD_FUNCTION(balance_thread, arg);
 static THD_WORKING_AREA(balance_thread_wa, 2048); // 2kb stack for this thread
@@ -254,7 +259,20 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
-	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage){
+	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
+			 (abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM)){
+		if(erpm > 0){
+			setpoint_target = balance_conf.tiltback_angle;
+		} else {
+			setpoint_target = -balance_conf.tiltback_angle;
+		}
+		setpointAdjustmentType = TILTBACK;
+		state = RUNNING_TILTBACK_LOW_VOLTAGE;
+	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
+			 ((abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM) ||
+			  (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_low_voltage - TILTBACK_LOW_VOLTAGE_SLOW_MARGIN)))){
+		// tiltback only if we're going fast, or if the voltage is REALLY low
+		// e.g. if threshold is at 40V, we allow voltage down to 38V if going slow
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_angle;
 		} else {
