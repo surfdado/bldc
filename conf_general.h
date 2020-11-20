@@ -239,6 +239,15 @@
 #define LED_EXT_BATT_HIGH			33.0
 
 /*
+ * Optional external buzzer connected to GPIO pin
+ */
+#ifndef EXT_BUZZER_ON
+#define EXT_BUZZER_ON() {}
+#define EXT_BUZZER_OFF() {}
+#endif
+
+
+/*
  * Output WS2811 signal on the HALL1 pin. Notice that hall sensors can't be used
  * at the same time.
  */

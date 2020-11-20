@@ -413,6 +413,25 @@ static THD_FUNCTION(balance_thread, arg) {
 			}
 		}
 
+		/*
+		 * Manage external buzzer to notify rider of foot switch faults.
+		 *
+		 * Note: if EXT_BUZZER isn't defined, then this code will be optimized out by compiler
+		 */
+		if (switch_state == OFF) {
+			if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+				// If we're at riding speed and the switch is off => ALERT the user
+				EXT_BUZZER_ON();
+			}
+			else {
+				// if we drop below riding speed stop buzzing
+				EXT_BUZZER_OFF();
+			}
+		}
+		else {
+			// if the switch comes back on we stop buzzing
+			EXT_BUZZER_OFF();
+		}
 
 		// Control Loop State Logic
 		switch(state){
@@ -539,6 +558,8 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
+	// in case we leave this loop make sure the buzzer is off
+	EXT_BUZZER_OFF();
 
 	// Disable output
 	brake();
