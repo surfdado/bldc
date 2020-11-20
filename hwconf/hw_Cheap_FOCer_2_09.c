@@ -56,6 +56,16 @@ void hw_init_gpio(void) {
 			PAL_STM32_OSPEED_HIGHEST);
 	EXT_BUZZER_OFF();
 
+	// Forward/Backward Lights
+	palSetPadMode(GPIOC, 13,
+			PAL_MODE_OUTPUT_PUSHPULL |
+			PAL_STM32_OSPEED_HIGHEST);
+	LIGHT_FWD_OFF();
+	palSetPadMode(GPIOC, 14,
+			PAL_MODE_OUTPUT_PUSHPULL |
+			PAL_STM32_OSPEED_HIGHEST);
+	LIGHT_BACK_OFF();
+
 	// ENABLE_GATE
 #ifdef HW60_VEDDER_FIRST_PCB
 	palSetPadMode(GPIOB, 6,
