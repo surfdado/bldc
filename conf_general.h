@@ -24,7 +24,7 @@
 #define FW_VERSION_MAJOR			5
 #define FW_VERSION_MINOR			02
 // Set to 0 for building a release and iterate during beta test builds
-#define FW_TEST_VERSION_NUMBER		12
+#define FW_TEST_VERSION_NUMBER		13
 
 #include "datatypes.h"
 
@@ -237,6 +237,24 @@
  */
 #define LED_EXT_BATT_LOW			28.0
 #define LED_EXT_BATT_HIGH			33.0
+
+/*
+ * Optional external buzzer connected to GPIO pin
+ */
+#ifndef EXT_BUZZER_ON
+#define EXT_BUZZER_ON() {}
+#define EXT_BUZZER_OFF() {}
+#endif
+
+/*
+ * Optional external LEDs driven by GPIO pins
+ */
+#ifndef LIGHT_FWD_ON
+#define LIGHT_FWD_ON() {}
+#define LIGHT_FWD_OFF() {}
+#define LIGHT_BACK_ON() {}
+#define LIGHT_BACK_OFF() {}
+#endif
 
 /*
  * Output WS2811 signal on the HALL1 pin. Notice that hall sensors can't be used

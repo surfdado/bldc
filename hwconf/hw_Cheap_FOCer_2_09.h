@@ -46,6 +46,14 @@
 #define CURRENT_FILTER_ON()		palSetPad(GPIOD, 2)
 #define CURRENT_FILTER_OFF()	palClearPad(GPIOD, 2)
 
+#define EXT_BUZZER_ON()			palSetPad(GPIOB, 12)
+#define EXT_BUZZER_OFF()		palClearPad(GPIOB, 12)
+
+#define LIGHT_FWD_ON()			palSetPad(GPIOC, 13)
+#define LIGHT_FWD_OFF()			palClearPad(GPIOC, 13)
+#define LIGHT_BACK_ON()			palSetPad(GPIOC, 14)
+#define LIGHT_BACK_OFF()		palClearPad(GPIOC, 14)
+
 // Switch on current filter if a permanent
 // NRF24 cannot be found, as the later
 // HW60 has changed one of the permanent NRF
@@ -290,6 +298,10 @@
 #endif
 #ifndef MCCONF_L_LIM_TEMP_FET_END
 #define MCCONF_L_LIM_TEMP_FET_END        70.0   // MOSFET temperature where everything should be shut off
+#endif
+
+#ifndef MCCONF_L_DUTY_START
+#define MCCONF_L_DUTY_START				1.0 // Start limiting current at this duty cycle
 #endif
 
 // Setting limits
