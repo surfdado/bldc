@@ -102,6 +102,44 @@ static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
 static float d_pt1_state, d_pt1_k;
 
+#ifdef HAS_EXT_BUZZER
+#define ALERT_BEEP_DURATION_MS 1200
+
+static int alert_beep_num_left = 0;
+static systime_t alert_beep_time;
+
+static void check_beep_alert(void)
+{
+	if (alert_beep_num_left > 0) {
+		if (current_time - alert_beep_time > ALERT_BEEP_DURATION_MS) {
+			alert_beep_time = current_time;
+			alert_beep_num_left--;
+
+			if (alert_beep_num_left & 0x1)
+				EXT_BUZZER_ON();
+			else
+				EXT_BUZZER_OFF();
+		}
+	}
+}
+static void beep_alert(int num_beeps)
+{
+	if (alert_beep_num_left == 0) {
+		alert_beep_num_left = num_beeps * 2;
+		alert_beep_time = current_time;
+		EXT_BUZZER_ON();
+	}
+}
+static void beep_off(void)
+{
+	// don't just turn the buzzer off if we're in the process of doing a multi-beep
+	if (alert_beep_num_left == 0)
+		EXT_BUZZER_OFF();
+}
+#else
+#define check_beep_alert(int) {}
+#define beep_alert() {}
+#endif
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
@@ -443,12 +481,12 @@ static THD_FUNCTION(balance_thread, arg) {
 			}
 			else {
 				// if we drop below riding speed stop buzzing
-				EXT_BUZZER_OFF();
+				beep_off();
 			}
 		}
 		else {
 			// if the switch comes back on we stop buzzing
-			EXT_BUZZER_OFF();
+			beep_off();
 		}
 
 		// Control Loop State Logic
@@ -480,6 +518,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
+
+				check_beep_alert();
 
 				// Apply setpoint filtering
 				if(setpointAdjustmentType == CENTERING){
@@ -601,7 +641,7 @@ static THD_FUNCTION(balance_thread, arg) {
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
 	// in case we leave this loop make sure the buzzer is off
-	EXT_BUZZER_OFF();
+	beep_off();
 
 	// we've stopped riding => turn the lights off
 	// TODO: Add delay (to help spot the vehicle after a crash?)
