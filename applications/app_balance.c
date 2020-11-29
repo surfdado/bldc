@@ -68,6 +68,10 @@ typedef enum {
 #define TILTBACK_LOW_VOLTAGE_MIN_ERPM 3000
 // Give me another 2 Volts of margin at low speeds before doing tiltback there too
 #define TILTBACK_LOW_VOLTAGE_SLOW_MARGIN 2
+// Audible alert at 1 Volt above tiltback voltage
+#define HEADSUP_LOW_VOLTAGE_MARGIN 1
+
+static int low_voltage_headsup_done = 0;
 
 // Balance thread
 static THD_FUNCTION(balance_thread, arg);
@@ -318,19 +322,30 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_LOW_VOLTAGE;
-	}else if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
-		// Nose angle adjustment
-		if(erpm > 0){
-			setpoint_target = balance_conf.tiltback_constant;
-		} else {
-			setpoint_target = -balance_conf.tiltback_constant;
-		}
-		setpointAdjustmentType = TILTBACK;
-		state = RUNNING_TILTBACK_CONSTANT;
 	}else{
-		setpointAdjustmentType = TILTBACK;
-		setpoint_target = 0;
-		state = RUNNING;
+		// Normal running
+		if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
+			// Nose angle adjustment
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_constant;
+			} else {
+				setpoint_target = -balance_conf.tiltback_constant;
+			}
+			setpointAdjustmentType = TILTBACK;
+			state = RUNNING_TILTBACK_CONSTANT;
+		}else{
+			setpointAdjustmentType = TILTBACK;
+			setpoint_target = 0;
+			state = RUNNING;
+		}
+#ifdef HAS_EXT_BUZZER
+		if (low_voltage_headsup_done == 0) {
+			if(GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage + HEADSUP_LOW_VOLTAGE_MARGIN) {
+				low_voltage_headsup_done = 1;
+				beep_alert(4);
+			}
+		}
+#endif
 	}
 }
 
