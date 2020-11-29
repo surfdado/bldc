@@ -490,7 +490,7 @@ static THD_FUNCTION(balance_thread, arg) {
 		 * Note: if EXT_BUZZER isn't defined, then this code will be optimized out by compiler
 		 */
 		if (switch_state == OFF) {
-			if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+			if ((abs_erpm > balance_conf.fault_adc_half_erpm) && (state >= RUNNING) && (state <= RUNNING_TILTBACK_CONSTANT)) {
 				// If we're at riding speed and the switch is off => ALERT the user
 				EXT_BUZZER_ON();
 			}
