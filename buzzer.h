@@ -8,14 +8,14 @@
 #include "hw.h" // Pin mapping on this hardware
 
 #ifdef HAS_EXT_BUZZER
-void check_beep_alert(void);
+void update_beep_alert(void);
 void beep_alert(int num_beeps, bool longbeep);
 void beep_off(bool force);
 void beep_on(bool force);
 void buzzer_enable(bool enable);
 bool is_buzzer_enabled(void);
 #else
-#define check_beep_alert(void) {}
+#define update_beep_alert(void) {}
 #define beep_alert(int, bool) {}
 #define beep_off(bool) {}
 #define beep_on(bool) {}

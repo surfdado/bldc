@@ -1,6 +1,14 @@
 #include "buzzer.h"
 
 #ifdef HAS_EXT_BUZZER
+
+#ifndef EXT_BUZZER_ON
+#error Missing definition of EXT_BUZZER_ON despite HAS_EXT_BUZZER being defined
+#endif
+#ifndef EXT_BUZZER_OFF
+#error Missing definition of EXT_BUZZER_OFF despite HAS_EXT_BUZZER being defined
+#endif
+
 // TODO: Make this configurable from the app
 #define ALERT_MIN_BEEP_MS 1200
 
@@ -22,7 +30,7 @@ bool is_buzzer_enabled() {
 	return is_enabled;
 }
 
-void check_beep_alert(void)
+void update_beep_alert(void)
 {
 	if (!is_enabled)
 		return;
@@ -68,6 +76,6 @@ void beep_on(bool force)
 }
 
 #else
-#define check_beep_alert(void) {}
+#define update_beep_alert(void) {}
 #define beep_alert(int, bool) {}
 #endif

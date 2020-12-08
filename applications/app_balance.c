@@ -804,6 +804,16 @@ static THD_FUNCTION(balance_thread, arg) {
 				if(imu_startup_done()){
 					reset_vars();
 					state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+
+					// Let the rider know that the board is ready (one short beep)
+					beep_alert(1, false);
+					// Are we within 5V of the LV tiltback threshold? Issue 1 beep for each volt below that
+					float bat_volts = GET_INPUT_VOLTAGE();
+					float threshold = balance_conf.tiltback_lv + 5;
+					if (bat_volts < threshold) {
+						int beeps = (int)fminf(6, threshold - bat_volts);
+						beep_alert(beeps, true);
+					}
 				}
 				break;
 			case (RUNNING):
