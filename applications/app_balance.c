@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "datatypes.h"
 #include "comm_can.h"
+#include "buzzer.h"
 
 
 #include <math.h>
@@ -514,6 +515,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				apply_torquetilt();
 				apply_turntilt();
 
+				update_beep_alert();
+
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
 				// Apply deadzone
@@ -597,6 +600,8 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
+	// in case we leave this force the buzzer off (force=regardless of ongoing multi beeps)
+	beep_off(true);
 
 	// Disable output
 	brake();
