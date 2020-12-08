@@ -262,6 +262,21 @@
 #define LED_EXT_BATT_HIGH			33.0
 
 /*
+ * Optional external LEDs driven by GPIO pins
+ */
+#ifndef LIGHT_FWD_ON
+#define LIGHT_FWD_ON() {}
+#define LIGHT_FWD_OFF() {}
+#define LIGHT_BACK_ON() {}
+#define LIGHT_BACK_OFF() {}
+#endif
+
+#ifndef BRAKE_LIGHT_ON
+#define BRAKE_LIGHT_ON() {}
+#define BRAKE_LIGHT_OFF() {}
+#endif
+
+/*
  * Servo output driver
  */
 #define SERVO_OUT_PULSE_MIN_US		1000	// Minimum pulse length in microseconds
