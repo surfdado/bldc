@@ -1,6 +1,14 @@
 #include "buzzer.h"
 
 #ifdef HAS_EXT_BUZZER
+
+#ifndef EXT_BUZZER_ON
+#error Missing definition of EXT_BUZZER_ON despite HAS_EXT_BUZZER being defined
+#endif
+#ifndef EXT_BUZZER_OFF
+#error Missing definition of EXT_BUZZER_OFF despite HAS_EXT_BUZZER being defined
+#endif
+
 // TODO: Make this configurable from the app
 #define ALERT_MIN_BEEP_MS 1200
 
@@ -11,7 +19,7 @@ static int alert_beep_num_left = 0;
 static systime_t alert_beep_time;
 static unsigned int alert_beep_duration = BEEP_SHORT;
 
-void check_beep_alert(void)
+void update_beep_alert(void)
 {
 	if (alert_beep_num_left > 0) {
 		if (chVTGetSystemTimeX() - alert_beep_time > alert_beep_duration) {
@@ -51,6 +59,6 @@ void beep_on(bool force)
 }
 
 #else
-#define check_beep_alert(void) {}
+#define update_beep_alert(void) {}
 #define beep_alert(int, bool) {}
 #endif
