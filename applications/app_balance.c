@@ -97,6 +97,7 @@ static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportion
 static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
 static float d_pt1_state, d_pt1_k;
+static float max_temp_fet;
 
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
@@ -136,6 +137,7 @@ void reset_vars(void){
 	current_time = 0;
 	last_time = 0;
 	diff_time = 0;
+	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 }
 
 float app_balance_get_pid_output(void) {
@@ -276,6 +278,13 @@ void calculate_setpoint_target(void){
 		setpointAdjustmentType = TILTBACK;
 		setpoint_target = 0;
 		state = RUNNING;
+
+#ifdef HAS_EXT_BUZZER
+		if (mc_interface_temp_fet_filtered() > max_temp_fet) {
+			// issue two long beeps if we entered max temp territory for our FETs
+			beep_alert(2, 1);
+		}
+#endif
 	}
 }
 
