@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "datatypes.h"
 #include "comm_can.h"
+#include "buzzer.h"
 
 
 #include <math.h>
@@ -441,6 +442,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 
+				update_beep_alert();
+
 				// Apply setpoint filtering
 				if(setpointAdjustmentType == CENTERING){
 					// Ignore filtering during centering
@@ -539,6 +542,8 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
+	// in case we leave this force the buzzer off (force=regardless of ongoing multi beeps)
+	beep_off(true);
 
 	// Disable output
 	brake();
