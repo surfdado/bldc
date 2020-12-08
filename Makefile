@@ -144,6 +144,7 @@ CSRC = $(STARTUPSRC) \
        conf_general.c \
        eeprom.c \
        commands.c \
+       buzzer.c \
        timeout.c \
        comm_can.c \
        ws2811.c \
