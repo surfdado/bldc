@@ -55,6 +55,7 @@
 #include "mempools.h"
 #include "events.h"
 #include "main.h"
+#include "buzzer.h"
 
 /*
  * HW resources used:
@@ -267,6 +268,11 @@ int main(void) {
 	}
 #endif
 
+	// Let the rider know that the system has booted
+	beep_on(1);
+	chThdSleepMilliseconds(100);
+	beep_off(1);
+
 	// Threads
 	chThdCreateStatic(periodic_thread_wa, sizeof(periodic_thread_wa), NORMALPRIO, periodic_thread, NULL);
 	chThdCreateStatic(flash_integrity_check_thread_wa, sizeof(flash_integrity_check_thread_wa), LOWPRIO, flash_integrity_check_thread, NULL);
@@ -290,6 +296,11 @@ int main(void) {
 	chThdSleepMilliseconds(500);
 	palSetPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
+
+	// Let the rider know that the board is ready
+	beep_on(1);
+	chThdSleepMilliseconds(100);
+	beep_off(1);
 
 	m_init_done = true;
 
