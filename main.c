@@ -60,6 +60,8 @@
 #include "lispif.h"
 #endif
 
+#include "buzzer.h"
+
 /*
  * HW resources used:
  *
@@ -310,6 +312,11 @@ int main(void) {
 #ifdef USE_LISPBM
 	lispif_init();
 #endif
+
+	// Let the rider know that the board is ready
+	beep_on(1);
+	chThdSleepMilliseconds(100);
+	beep_off(1);
 
 	m_init_done = true;
 
