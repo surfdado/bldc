@@ -65,6 +65,15 @@ typedef enum {
 	ON
 } SwitchState;
 
+typedef enum {
+	RIDE_OFF = 0,
+	RIDE_IDLE = 1,
+	RIDE_FORWARD,
+	RIDE_REVERSE,
+	BRAKE_FORWARD,
+	BRAKE_REVERSE
+} RideState;
+
 // Allow me to go 10km/h even below low voltage
 #define TILTBACK_LOW_VOLTAGE_MIN_ERPM 3000
 // Give me another 2 Volts of margin at low speeds before doing tiltback there too
@@ -107,7 +116,7 @@ static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
-
+static RideState ride_state, new_ride_state;
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
@@ -147,6 +156,7 @@ void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
+	new_ride_state = ride_state = RIDE_OFF;
 }
 
 float app_balance_get_pid_output(void) {
@@ -315,17 +325,19 @@ void calculate_setpoint_target(void){
 		if (low_voltage_headsup_done == 0) {
 			if(GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage + HEADSUP_LOW_VOLTAGE_MARGIN) {
 				low_voltage_headsup_done = 1;
-				beep_alert(4, 0);
+				beep_alert(3, 0);
 			}
 		}
 #endif
 
+		/*
 #ifdef HAS_EXT_BUZZER
 		if (mc_interface_temp_fet_filtered() > max_temp_fet) {
 			// issue two long beeps if we entered max temp territory for our FETs
 			beep_alert(2, 1);
 		}
-#endif
+		#endif
+		*/
 	}
 }
 
@@ -356,6 +368,42 @@ float apply_deadzone(float error){
 	}
 }
 
+static void update_lights(void){
+	ride_state = new_ride_state;
+	switch (ride_state) {
+	case RIDE_OFF:
+		LIGHT_FWD_OFF();
+		LIGHT_BACK_OFF();
+		BRAKE_LIGHT_OFF();
+		break;
+	case RIDE_IDLE:
+		LIGHT_FWD_ON();
+		LIGHT_BACK_ON();
+		BRAKE_LIGHT_OFF();
+		break;
+	case RIDE_FORWARD:
+		LIGHT_FWD_ON();
+		LIGHT_BACK_OFF();
+		BRAKE_LIGHT_OFF();
+		break;
+	case RIDE_REVERSE:
+		LIGHT_FWD_OFF();
+		LIGHT_BACK_ON();
+		BRAKE_LIGHT_OFF();
+		break;
+	case BRAKE_FORWARD:
+		LIGHT_FWD_ON();
+		LIGHT_BACK_OFF();
+		BRAKE_LIGHT_ON();
+		break;
+	case BRAKE_REVERSE:
+		LIGHT_FWD_OFF();
+		LIGHT_BACK_ON();
+		BRAKE_LIGHT_ON();
+		break;
+	}
+}
+
 void brake(void){
 	// Reset the timeout
 	timeout_reset();
@@ -369,6 +417,11 @@ void brake(void){
 			}
 		}
 	}
+	beep_off(true);
+	// we've stopped riding => turn the lights off
+	// TODO: Add delay (to help spot the vehicle after a crash?)
+	new_ride_state = RIDE_OFF;
+	update_lights();
 }
 
 void set_current(float current, float yaw_current){
@@ -499,6 +552,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				reset_vars();
 				state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+				// Keep lights off while in startup state
+				update_lights();
 				break;
 			case (RUNNING):
 			case (RUNNING_TILTBACK_DUTY):
@@ -588,21 +643,50 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
+
+				if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+					// we're at riding speed => turn on the forward facing lights
+					if (pid_value > -4) {
+						if (erpm > 0) {
+							new_ride_state = RIDE_FORWARD;
+						}
+						else {
+							new_ride_state = RIDE_REVERSE;
+						}
+					}
+					else {
+						if (erpm > 0) {
+							new_ride_state = BRAKE_FORWARD;
+						}
+						else {
+							new_ride_state = BRAKE_REVERSE;
+						}
+					}
+				}
+				else {
+					new_ride_state = RIDE_IDLE;
+				}
+				if (new_ride_state != ride_state){
+					update_lights();
+				}
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
 			case (FAULT_STARTUP):
+				new_ride_state = RIDE_OFF;
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
 					reset_vars();
+					update_lights();
 					break;
 				}
 				// Disable output
 				brake();
 				break;
 			case (FAULT_DUTY):
+				new_ride_state = RIDE_OFF;
 				// We need another fault to clear duty fault.
 				// Otherwise duty fault will clear itself as soon as motor pauses, then motor will spool up again.
 				// Rendering this fault useless.
