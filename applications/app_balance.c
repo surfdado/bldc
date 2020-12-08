@@ -195,7 +195,14 @@ bool check_faults(bool ignoreTimers){
 	// Check switch
 	// Switch fully open
 	if(switch_state == OFF){
+		// any speed:
 		if(ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_full || ignoreTimers){
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		// low speed (below 4 x half-fault threshold speed):
+		else if ((abs_erpm < balance_conf.fault_adc_half_erpm * 4)
+				 && (ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_half)){
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
@@ -457,6 +464,29 @@ static THD_FUNCTION(balance_thread, arg) {
 			}
 		}
 
+		/*
+		 * Use external buzzer to notify rider of foot switch faults.
+		 */
+#ifdef HAS_EXT_BUZZER
+		if (switch_state == OFF) {
+			if ((abs_erpm > balance_conf.fault_adc_half_erpm)
+				&& (state >= RUNNING)
+				&& (state <= RUNNING_TILTBACK_CONSTANT))
+			{
+				// If we're at riding speed and the switch is off => ALERT the user
+				// set force=true since this could indicate an imminent shutdown/nosedive
+				beep_on(true);
+			}
+			else {
+				// if we drop below riding speed stop buzzing
+				beep_off(false);
+			}
+		}
+		else {
+			// if the switch comes back on we stop buzzing
+			beep_off(false);
+		}
+#endif
 
 		// Control Loop State Logic
 		switch(state){
