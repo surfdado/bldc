@@ -131,7 +131,8 @@ typedef enum {
 	FAULT_CODE_RESOLVER_DOS,
 	FAULT_CODE_RESOLVER_LOS,
 	FAULT_CODE_FLASH_CORRUPTION_APP_CFG,
-	FAULT_CODE_FLASH_CORRUPTION_MC_CFG
+	FAULT_CODE_FLASH_CORRUPTION_MC_CFG,
+	FAULT_CODE_ENCODER_NO_MAGNET
 } mc_fault_code;
 
 typedef enum {
@@ -165,7 +166,8 @@ typedef enum {
 	SENSOR_PORT_MODE_AD2S1205,
 	SENSOR_PORT_MODE_SINCOS,
 	SENSOR_PORT_MODE_TS5700N8501,
-	SENSOR_PORT_MODE_TS5700N8501_MULTITURN
+	SENSOR_PORT_MODE_TS5700N8501_MULTITURN,
+	SENSOR_PORT_MODE_MT6816_SPI
 } sensor_port_mode;
 
 typedef struct {
@@ -347,6 +349,8 @@ typedef struct {
 	float foc_duty_dowmramp_ki;
 	float foc_openloop_rpm;
 	float foc_openloop_rpm_low;
+	float foc_d_gain_scale_start;
+	float foc_d_gain_scale_max_mod;
 	float foc_sl_openloop_hyst;
 	float foc_sl_openloop_time;
 	float foc_sl_openloop_time_lock;
@@ -443,7 +447,9 @@ typedef enum {
 	APP_NUNCHUK,
 	APP_NRF,
 	APP_CUSTOM,
-	APP_BALANCE
+	APP_BALANCE,
+	APP_PAS,
+	APP_ADC_PAS
 } app_use;
 
 // Throttle curve mode
@@ -508,6 +514,17 @@ typedef enum {
 	ADC_CTRL_TYPE_PID_REV_BUTTON
 } adc_control_type;
 
+// PAS control types
+typedef enum {
+	PAS_CTRL_TYPE_NONE = 0,
+	PAS_CTRL_TYPE_CADENCE
+} pas_control_type;
+
+// PAS sensor types
+typedef enum {
+	PAS_SENSOR_TYPE_QUADRATURE = 0
+} pas_sensor_type;
+
 typedef struct {
 	adc_control_type ctrl_type;
 	float hyst;
@@ -557,6 +574,20 @@ typedef struct {
 	float smart_rev_max_duty;
 	float smart_rev_ramp_time;
 } chuk_config;
+
+typedef struct {
+	pas_control_type ctrl_type;
+	pas_sensor_type sensor_type;
+	float current_scaling;
+	float pedal_rpm_start;
+	float pedal_rpm_end;
+	bool invert_pedal_direction;
+	uint8_t magnets;
+	bool use_filter;
+	float ramp_time_pos;
+	float ramp_time_neg;
+	uint32_t update_rate_hz;
+} pas_config;
 
 // NRF Datatypes
 typedef enum {
@@ -717,6 +748,12 @@ typedef enum {
 	CAN_MODE_COMM_BRIDGE
 } CAN_MODE;
 
+typedef enum {
+	UAVCAN_RAW_MODE_CURRENT = 0,
+	UAVCAN_RAW_MODE_CURRENT_NO_REV_BRAKE,
+	UAVCAN_RAW_MODE_DUTY
+} UAVCAN_RAW_MODE;
+
 typedef struct {
 	// Settings
 	uint8_t controller_id;
@@ -732,6 +769,7 @@ typedef struct {
 	// CAN modes
 	CAN_MODE can_mode;
 	uint8_t uavcan_esc_index;
+	UAVCAN_RAW_MODE uavcan_raw_mode;
 
 	// Application to use
 	app_use app_to_use;
@@ -753,6 +791,9 @@ typedef struct {
 
 	// Balance application settings
 	balance_config app_balance_conf;
+
+	// Pedal Assist application settings
+	pas_config app_pas_conf;
 
 	// IMU Settings
 	imu_config imu_conf;

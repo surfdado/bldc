@@ -149,6 +149,7 @@ typedef struct {
 	float m_phase_before_speed_est;
 	int m_tacho_step_last;
 	float m_pid_div_angle_last;
+	float m_pid_div_angle_accumulator;
 	float m_min_rpm_hyst_timer;
 	float m_min_rpm_timer;
 	bool m_cc_was_hfi;
@@ -2295,7 +2296,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	// This has to be done for the skip function to have any chance at working with the
 	// observer and control loops.
 	// TODO: Test this.
-	dt /= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
+	dt *= (float)FOC_CONTROL_LOOP_FREQ_DIVIDER;
 
 	UTILS_LP_FAST(motor_now->m_motor_state.v_bus, GET_INPUT_VOLTAGE(), 0.1);
 
@@ -2731,7 +2732,6 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	motor_now->m_tachometer_abs += abs(diff);
 
 	// Track position control angle
-	// TODO: Have another look at this.
 	float angle_now = 0.0;
 	if (encoder_is_configured()) {
 		if (conf_now->m_sensor_port_mode == SENSOR_PORT_MODE_TS5700N8501_MULTITURN) {
@@ -2743,12 +2743,22 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		angle_now = motor_now->m_motor_state.phase * (180.0 / M_PI);
 	}
 
+	utils_norm_angle(&angle_now);
+
 	if (conf_now->p_pid_ang_div > 0.98 && conf_now->p_pid_ang_div < 1.02) {
 		motor_now->m_pos_pid_now = angle_now;
 	} else {
-		float diff_f = utils_angle_difference(angle_now, motor_now->m_pid_div_angle_last);
+		if (angle_now < 90.0 && motor_now->m_pid_div_angle_last > 270.0) {
+			motor_now->m_pid_div_angle_accumulator += 360.0 / conf_now->p_pid_ang_div;
+			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
+		} else if (angle_now > 270.0 && motor_now->m_pid_div_angle_last < 90.0) {
+			motor_now->m_pid_div_angle_accumulator -= 360.0 / conf_now->p_pid_ang_div;
+			utils_norm_angle((float*)&motor_now->m_pid_div_angle_accumulator);
+		}
+
 		motor_now->m_pid_div_angle_last = angle_now;
-		motor_now->m_pos_pid_now += diff_f / conf_now->p_pid_ang_div;
+
+		motor_now->m_pos_pid_now = motor_now->m_pid_div_angle_accumulator + angle_now / conf_now->p_pid_ang_div;
 		utils_norm_angle((float*)&motor_now->m_pos_pid_now);
 	}
 
@@ -3292,10 +3302,23 @@ static void control_current(volatile motor_all_state_t *motor, float dt) {
 	UTILS_LP_FAST(state_m->id_filter, state_m->id, conf_now->foc_current_filter_const);
 	UTILS_LP_FAST(state_m->iq_filter, state_m->iq, conf_now->foc_current_filter_const);
 
+	float d_gain_scale = 1.0;
+	float max_mod_norm = fabsf(state_m->duty_now / max_duty);
+	if (max_duty < 0.01) {
+		max_mod_norm = 1.0;
+	}
+	if (max_mod_norm > conf_now->foc_d_gain_scale_start) {
+		d_gain_scale = utils_map(max_mod_norm, conf_now->foc_d_gain_scale_start, 1.0,
+				1.0, conf_now->foc_d_gain_scale_max_mod);
+		if (d_gain_scale < conf_now->foc_d_gain_scale_max_mod) {
+			d_gain_scale = conf_now->foc_d_gain_scale_max_mod;
+		}
+	}
+
 	float Ierr_d = state_m->id_target - state_m->id;
 	float Ierr_q = state_m->iq_target - state_m->iq;
 
-	state_m->vd = state_m->vd_int + Ierr_d * conf_now->foc_current_kp;
+	state_m->vd = state_m->vd_int + Ierr_d * conf_now->foc_current_kp * d_gain_scale;
 	state_m->vq = state_m->vq_int + Ierr_q * conf_now->foc_current_kp;
 
 	// Temperature compensation
@@ -3305,7 +3328,7 @@ static void control_current(volatile motor_all_state_t *motor, float dt) {
 		ki += ki * 0.00386 * (t - conf_now->foc_temp_comp_base_temp);
 	}
 
-	state_m->vd_int += Ierr_d * (ki * dt);
+	state_m->vd_int += Ierr_d * (ki * d_gain_scale * dt);
 	state_m->vq_int += Ierr_q * (ki * dt);
 
 	// Decoupling
