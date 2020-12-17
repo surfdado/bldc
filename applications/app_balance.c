@@ -72,7 +72,9 @@ typedef enum {
 // Audible alert at 1 Volt above tiltback voltage
 #define HEADSUP_LOW_VOLTAGE_MARGIN 1
 
+#ifdef HAS_EXT_BUZZER
 static int low_voltage_headsup_done = 0;
+#endif
 
 // Balance thread
 static THD_FUNCTION(balance_thread, arg);
@@ -477,13 +479,17 @@ static THD_FUNCTION(balance_thread, arg) {
 				beep_on(true);
 			}
 			else {
+#ifdef HAS_EXT_BUZZER
 				// if we drop below riding speed stop buzzing
 				beep_off(false);
+#endif
 			}
 		}
 		else {
+#ifdef HAS_EXT_BUZZER
 			// if the switch comes back on we stop buzzing
 			beep_off(false);
+#endif
 		}
 #endif
 
@@ -638,8 +644,10 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
+#ifdef HAS_EXT_BUZZER
 	// in case we leave this force the buzzer off (force=regardless of ongoing multi beeps)
 	beep_off(true);
+#endif
 
 	// we've stopped riding => turn the lights off
 	// TODO: Add delay (to help spot the vehicle after a crash?)

@@ -367,10 +367,12 @@ int main(void) {
 	palSetPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
 
+#ifdef HAS_EXT_BUZZER
 	// Let the rider know that the board is ready
 	beep_on(1);
 	chThdSleepMilliseconds(100);
 	beep_off(1);
+#endif
 
 	for(;;) {
 		chThdSleepMilliseconds(10);
