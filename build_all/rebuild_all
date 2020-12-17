@@ -372,6 +372,13 @@ make -j8 build_args='-DDISABLE_HW_LIMITS -DHW_SOURCE=\"hw_unity.c\" -DHW_HEADER=
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default_no_hw_limits.bin
 
+# super single configuration
+cd $FWPATH
+touch conf_general.h
+make -j8 build_args='-DHW_DUAL_CONFIG_PARALLEL -DHW_SOURCE=\"hw_unity.c\" -DHW_HEADER=\"hw_unity.h\"' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_parallel_super_single.bin
+
 #################### STORMCORE_60D ########################
 
 COPYDIR=STORMCORE_60D
