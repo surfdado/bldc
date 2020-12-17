@@ -74,8 +74,8 @@
 //#define HW60_IS_MK4
 #define HW60_IS_MK5
 
-#define HW_SOURCE "hw_60.c"
-#define HW_HEADER "hw_60.h"
+//#define HW_SOURCE "hw_60.c"
+//#define HW_HEADER "hw_60.h"
 
 //#define HW_SOURCE "hw_r2.c"
 //#define HW_HEADER "hw_r2.h"
@@ -103,7 +103,7 @@
 
 // Second revision with separate UART for NRF51
 //#define HW75_300_REV_2
-#define HW75_300_REV_3
+//#define HW75_300_REV_3
 
 //#define HW_SOURCE "hw_75_300.c"
 //#define HW_HEADER "hw_75_300.h"
@@ -160,8 +160,8 @@
 //#define HW_SOURCE "hw_es19.c"
 //#define HW_HEADER "hw_es19.h"
 
-//#define HW_SOURCE "hw_Cheap_FOCer_2_09.c"
-//#define HW_HEADER "hw_Cheap_FOCer_2_09.h"
+#define HW_SOURCE "hw_Cheap_FOCer_2_09.c"
+#define HW_HEADER "hw_Cheap_FOCer_2_09.h"
 
 #endif
 
@@ -239,14 +239,6 @@
  */
 #define LED_EXT_BATT_LOW			28.0
 #define LED_EXT_BATT_HIGH			33.0
-
-/*
- * Optional external buzzer connected to GPIO pin
- */
-#ifndef EXT_BUZZER_ON
-#define EXT_BUZZER_ON() {}
-#define EXT_BUZZER_OFF() {}
-#endif
 
 /*
  * Optional external LEDs driven by GPIO pins

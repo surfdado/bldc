@@ -55,6 +55,7 @@
 #endif
 #include "shutdown.h"
 #include "mempools.h"
+#include "buzzer.h"
 
 /*
  * HW resources used:
@@ -366,12 +367,10 @@ int main(void) {
 	palSetPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
 
-#ifdef EXT_BUZZER_ON
 	// Let the rider know that the board is ready
-	EXT_BUZZER_ON();
+	beep_on(1);
 	chThdSleepMilliseconds(100);
-	EXT_BUZZER_OFF();
-#endif
+	beep_off(1);
 
 	for(;;) {
 		chThdSleepMilliseconds(10);

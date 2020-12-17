@@ -30,6 +30,7 @@
 #include "utils.h"
 #include "datatypes.h"
 #include "comm_can.h"
+#include "buzzer.h"
 
 
 #include <math.h>
@@ -64,6 +65,15 @@ typedef enum {
 	ON
 } SwitchState;
 
+// Allow me to go 10km/h even below low voltage
+#define TILTBACK_LOW_VOLTAGE_MIN_ERPM 3000
+// Give me another 2 Volts of margin at low speeds before doing tiltback there too
+#define TILTBACK_LOW_VOLTAGE_SLOW_MARGIN 2
+// Audible alert at 1 Volt above tiltback voltage
+#define HEADSUP_LOW_VOLTAGE_MARGIN 1
+
+static int low_voltage_headsup_done = 0;
+
 // Balance thread
 static THD_FUNCTION(balance_thread, arg);
 static THD_WORKING_AREA(balance_thread_wa, 2048); // 2kb stack for this thread
@@ -96,6 +106,7 @@ static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportion
 static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
 static float d_pt1_state, d_pt1_k;
+static float max_temp_fet;
 
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
@@ -135,6 +146,7 @@ void reset_vars(void){
 	current_time = 0;
 	last_time = 0;
 	diff_time = 0;
+	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 }
 
 float app_balance_get_pid_output(void) {
@@ -183,7 +195,14 @@ bool check_faults(bool ignoreTimers){
 	// Check switch
 	// Switch fully open
 	if(switch_state == OFF){
+		// any speed:
 		if(ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_full || ignoreTimers){
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		// low speed (below 4 x half-fault threshold speed):
+		else if ((abs_erpm < balance_conf.fault_adc_half_erpm * 4)
+				 && (ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_half)){
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
@@ -254,7 +273,8 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
-	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage){
+	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
+			 (abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM)){
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_angle;
 		} else {
@@ -262,19 +282,49 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_LOW_VOLTAGE;
-	}else if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
-		// Nose angle adjustment
+	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
+			 ((abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM) ||
+			  (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_low_voltage - TILTBACK_LOW_VOLTAGE_SLOW_MARGIN)))){
+		// tiltback only if we're going fast, or if the voltage is REALLY low
+		// e.g. if threshold is at 40V, we allow voltage down to 38V if going slow
 		if(erpm > 0){
-			setpoint_target = balance_conf.tiltback_constant;
+			setpoint_target = balance_conf.tiltback_angle;
 		} else {
-			setpoint_target = -balance_conf.tiltback_constant;
+			setpoint_target = -balance_conf.tiltback_angle;
 		}
 		setpointAdjustmentType = TILTBACK;
-		state = RUNNING_TILTBACK_CONSTANT;
+		state = RUNNING_TILTBACK_LOW_VOLTAGE;
 	}else{
-		setpointAdjustmentType = TILTBACK;
-		setpoint_target = 0;
-		state = RUNNING;
+		// Normal running
+		if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
+			// Nose angle adjustment
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_constant;
+			} else {
+				setpoint_target = -balance_conf.tiltback_constant;
+			}
+			setpointAdjustmentType = TILTBACK;
+			state = RUNNING_TILTBACK_CONSTANT;
+		}else{
+			setpointAdjustmentType = TILTBACK;
+			setpoint_target = 0;
+			state = RUNNING;
+		}
+#ifdef HAS_EXT_BUZZER
+		if (low_voltage_headsup_done == 0) {
+			if(GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage + HEADSUP_LOW_VOLTAGE_MARGIN) {
+				low_voltage_headsup_done = 1;
+				beep_alert(4, 0);
+			}
+		}
+#endif
+
+#ifdef HAS_EXT_BUZZER
+		if (mc_interface_temp_fet_filtered() > max_temp_fet) {
+			// issue two long beeps if we entered max temp territory for our FETs
+			beep_alert(2, 1);
+		}
+#endif
 	}
 }
 
@@ -414,24 +464,28 @@ static THD_FUNCTION(balance_thread, arg) {
 		}
 
 		/*
-		 * Manage external buzzer to notify rider of foot switch faults.
-		 *
-		 * Note: if EXT_BUZZER isn't defined, then this code will be optimized out by compiler
+		 * Use external buzzer to notify rider of foot switch faults.
 		 */
+#ifdef HAS_EXT_BUZZER
 		if (switch_state == OFF) {
-			if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+			if ((abs_erpm > balance_conf.fault_adc_half_erpm)
+				&& (state >= RUNNING)
+				&& (state <= RUNNING_TILTBACK_CONSTANT))
+			{
 				// If we're at riding speed and the switch is off => ALERT the user
-				EXT_BUZZER_ON();
+				// set force=true since this could indicate an imminent shutdown/nosedive
+				beep_on(true);
 			}
 			else {
 				// if we drop below riding speed stop buzzing
-				EXT_BUZZER_OFF();
+				beep_off(false);
 			}
 		}
 		else {
 			// if the switch comes back on we stop buzzing
-			EXT_BUZZER_OFF();
+			beep_off(false);
 		}
+#endif
 
 		// Control Loop State Logic
 		switch(state){
@@ -462,6 +516,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
+
+				update_beep_alert();
 
 				// Apply setpoint filtering
 				if(setpointAdjustmentType == CENTERING){
@@ -582,8 +638,8 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
-	// in case we leave this loop make sure the buzzer is off
-	EXT_BUZZER_OFF();
+	// in case we leave this force the buzzer off (force=regardless of ongoing multi beeps)
+	beep_off(true);
 
 	// we've stopped riding => turn the lights off
 	// TODO: Add delay (to help spot the vehicle after a crash?)
