@@ -254,7 +254,6 @@ cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
 
 #################### HW HD60 ########################
 
-
 COPYDIR=HD60
 mkdir -p $COPYDIR
 rm -f $COPYDIR/*

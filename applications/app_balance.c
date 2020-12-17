@@ -413,6 +413,25 @@ static THD_FUNCTION(balance_thread, arg) {
 			}
 		}
 
+		/*
+		 * Manage external buzzer to notify rider of foot switch faults.
+		 *
+		 * Note: if EXT_BUZZER isn't defined, then this code will be optimized out by compiler
+		 */
+		if (switch_state == OFF) {
+			if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+				// If we're at riding speed and the switch is off => ALERT the user
+				EXT_BUZZER_ON();
+			}
+			else {
+				// if we drop below riding speed stop buzzing
+				EXT_BUZZER_OFF();
+			}
+		}
+		else {
+			// if the switch comes back on we stop buzzing
+			EXT_BUZZER_OFF();
+		}
 
 		// Control Loop State Logic
 		switch(state){
@@ -425,6 +444,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				reset_vars();
 				state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+				// Keep lights off while in startup state
+				LIGHT_FWD_OFF();
+				LIGHT_BACK_OFF();
 				break;
 			case (RUNNING):
 			case (RUNNING_TILTBACK_DUTY):
@@ -512,6 +534,27 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
+
+				/*
+				 * Control the light pins
+				 * If lights aren't supported by the hardware, the code below is optimized out by compiler
+				 */
+				if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+					// we're at riding speed => turn on the forward facing lights
+					if (erpm > 0) {
+						LIGHT_FWD_ON();
+						LIGHT_BACK_OFF();
+					}
+					else {
+						LIGHT_FWD_OFF();
+						LIGHT_BACK_ON();
+					}
+				}
+				else {
+					// when we're slow, keep both lights on to avoid flickering when not really moving
+					LIGHT_FWD_ON();
+					LIGHT_BACK_ON();
+				}
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
@@ -539,6 +582,13 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));
 	}
+	// in case we leave this loop make sure the buzzer is off
+	EXT_BUZZER_OFF();
+
+	// we've stopped riding => turn the lights off
+	// TODO: Add delay (to help spot the vehicle after a crash?)
+	LIGHT_FWD_OFF();
+	LIGHT_BACK_OFF();
 
 	// Disable output
 	brake();
