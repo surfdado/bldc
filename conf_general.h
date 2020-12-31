@@ -74,8 +74,8 @@
 //#define HW60_IS_MK4
 #define HW60_IS_MK5
 
-#define HW_SOURCE "hw_60.c"
-#define HW_HEADER "hw_60.h"
+//#define HW_SOURCE "hw_60.c"
+//#define HW_HEADER "hw_60.h"
 
 //#define HW_SOURCE "hw_r2.c"
 //#define HW_HEADER "hw_r2.h"
@@ -155,8 +155,8 @@
 //#define HW_SOURCE "hw_stormcore_100s.c"
 //#define HW_HEADER "hw_stormcore_100s.h"
 
-//#define HW_SOURCE "hw_Cheap_FOCer_2.c"
-//#define HW_HEADER "hw_Cheap_FOCer_2.h"
+#define HW_SOURCE "hw_Cheap_FOCer_2.c"
+#define HW_HEADER "hw_Cheap_FOCer_2.h"
 
 //#define HW_SOURCE "hw_140_300.c"
 //#define HW_HEADER "hw_140_300.h"
