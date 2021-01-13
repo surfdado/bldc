@@ -266,27 +266,28 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
-	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
-			 (abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM)){
-		if(erpm > 0){
-			setpoint_target = balance_conf.tiltback_angle;
-		} else {
-			setpoint_target = -balance_conf.tiltback_angle;
+	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage){
+		if (abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM){
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_angle;
+			} else {
+				setpoint_target = -balance_conf.tiltback_angle;
+			}
+			setpointAdjustmentType = TILTBACK;
+			state = RUNNING_TILTBACK_LOW_VOLTAGE;
 		}
-		setpointAdjustmentType = TILTBACK;
-		state = RUNNING_TILTBACK_LOW_VOLTAGE;
-	}else if((abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage) &&
-			 ((abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM) ||
-			  (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_low_voltage - TILTBACK_LOW_VOLTAGE_SLOW_MARGIN)))){
-		// tiltback only if we're going fast, or if the voltage is REALLY low
-		// e.g. if threshold is at 40V, we allow voltage down to 38V if going slow
-		if(erpm > 0){
-			setpoint_target = balance_conf.tiltback_angle;
-		} else {
-			setpoint_target = -balance_conf.tiltback_angle;
+		else if ((abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM) ||
+				 (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_low_voltage - TILTBACK_LOW_VOLTAGE_SLOW_MARGIN))){
+			// tiltback only if we're going fast, or if the voltage is REALLY low
+			// e.g. if threshold is at 40V, we allow voltage down to 38V if going slow
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_angle;
+			} else {
+				setpoint_target = -balance_conf.tiltback_angle;
+			}
+			setpointAdjustmentType = TILTBACK;
+			state = RUNNING_TILTBACK_LOW_VOLTAGE;
 		}
-		setpointAdjustmentType = TILTBACK;
-		state = RUNNING_TILTBACK_LOW_VOLTAGE;
 	}else{
 		// Normal running
 		if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
