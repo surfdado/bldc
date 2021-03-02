@@ -333,8 +333,10 @@ void calculate_setpoint_target(void){
 #ifdef HAS_EXT_BUZZER
 		if (low_voltage_headsup_done == 0) {
 			if(GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage + HEADSUP_LOW_VOLTAGE_MARGIN) {
-				low_voltage_headsup_done = 1;
-				beep_alert(3, 0);
+				if (motor_current < 10) {
+					low_voltage_headsup_done = 1;
+					beep_alert(3, 0);
+				}
 			}
 		}
 #endif
@@ -622,8 +624,24 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				reset_vars();
 				state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
-				// Keep lights off while in startup state
-				update_lights();
+
+				// Let the rider know that the board is ready
+				beep_on(1);
+				chThdSleepMilliseconds(100);
+				beep_off(1);
+
+				// Issue 1 beep for each volt below 45
+				double bat_volts = GET_INPUT_VOLTAGE();
+				if (bat_volts < 45) {
+					chThdSleepMilliseconds(400);
+					while (bat_volts < 45) {
+						chThdSleepMilliseconds(200);
+						beep_on(1);
+						chThdSleepMilliseconds(300);
+						beep_off(1);
+						bat_volts = bat_volts + 1;
+					}
+				}
 				break;
 			case (RUNNING):
 			case (RUNNING_TILTBACK_DUTY):
