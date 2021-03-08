@@ -52,6 +52,12 @@ void hw_init_gpio(void) {
             PAL_MODE_OUTPUT_PUSHPULL |
             PAL_STM32_OSPEED_HIGHEST);
 
+	// External Buzzer (using servo pin!)
+	palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN,
+			PAL_MODE_OUTPUT_PUSHPULL |
+			PAL_STM32_OSPEED_HIGHEST);
+	EXT_BUZZER_OFF();
+
     // ENABLE_GATE
     palSetPadMode(GPIOB, 5,
             PAL_MODE_OUTPUT_PUSHPULL |
