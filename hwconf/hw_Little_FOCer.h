@@ -22,7 +22,7 @@
 
 #include "drv8323s.h"
 
-#define HW_NAME                 "Little FOCer"
+#define HW_NAME                 "Little FOCer+"
 
 // HW properties
 #define HW_HAS_DRV8323S
@@ -159,6 +159,11 @@
 #define HW_ICU_GPIO_AF          GPIO_AF_TIM4
 #define HW_ICU_GPIO             GPIOB
 #define HW_ICU_PIN              6
+
+// LittleFOCer uses servo pin for buzzer
+#define HAS_EXT_BUZZER			1
+#define EXT_BUZZER_ON()			palSetPad(HW_ICU_GPIO, HW_ICU_PIN)
+#define EXT_BUZZER_OFF()		palClearPad(HW_ICU_GPIO, HW_ICU_PIN)
 
 // I2C Peripheral
 #define HW_I2C_DEV              I2CD2
