@@ -51,7 +51,8 @@ void hw_init_gpio(void) {
                   PAL_STM32_OSPEED_HIGHEST);
 
 	// External Buzzer / LED (used for footswitch alerts and boot done notification)
-	palSetPadMode(GPIOB, 12,
+	//palSetPadMode(GPIOB, 12,
+	palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN, 
 			PAL_MODE_OUTPUT_PUSHPULL |
 			PAL_STM32_OSPEED_HIGHEST);
 	EXT_BUZZER_OFF();

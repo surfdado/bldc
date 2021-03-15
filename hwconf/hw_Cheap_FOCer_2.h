@@ -43,8 +43,8 @@
 #define CURRENT_FILTER_OFF()	palClearPad(GPIOD, 2)
 
 #define HAS_EXT_BUZZER			1
-#define EXT_BUZZER_ON()			palSetPad(GPIOB, 12)
-#define EXT_BUZZER_OFF()		palClearPad(GPIOB, 12)
+//#define EXT_BUZZER_ON()			palSetPad(GPIOB, 12)
+//#define EXT_BUZZER_OFF()		palClearPad(GPIOB, 12)
 
 #define LIGHT_FWD_ON()			palSetPad(GPIOC, 13)
 #define LIGHT_FWD_OFF()			palClearPad(GPIOC, 13)
@@ -185,6 +185,9 @@
 #define HW_ICU_GPIO_AF			GPIO_AF_TIM4
 #define HW_ICU_GPIO				GPIOB
 #define HW_ICU_PIN				6
+
+#define EXT_BUZZER_ON()			palSetPad(HW_ICU_GPIO, HW_ICU_PIN)
+#define EXT_BUZZER_OFF()		palClearPad(HW_ICU_GPIO, HW_ICU_PIN)
 
 // I2C Peripheral
 #define HW_I2C_DEV				I2CD2
