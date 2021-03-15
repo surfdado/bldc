@@ -155,8 +155,8 @@
 //#define HW_SOURCE "hw_stormcore_100s.c"
 //#define HW_HEADER "hw_stormcore_100s.h"
 
-#define HW_SOURCE "hw_Cheap_FOCer_2.c"
-#define HW_HEADER "hw_Cheap_FOCer_2.h"
+//#define HW_SOURCE "hw_Cheap_FOCer_2.c"
+//#define HW_HEADER "hw_Cheap_FOCer_2.h"
 
 //#define HW_SOURCE "hw_140_300.c"
 //#define HW_HEADER "hw_140_300.h"
@@ -164,8 +164,8 @@
 //#define HW_SOURCE "hw_es19.c"
 //#define HW_HEADER "hw_es19.h"
 
-//#define HW_SOURCE "hw_Little_FOCer.c"
-//#define HW_HEADER "hw_Little_FOCer.h"
+#define HW_SOURCE "hw_Little_FOCer.c"
+#define HW_HEADER "hw_Little_FOCer.h"
 
 //#define HW_SOURCE "hw_100_500.c"
 //#define HW_HEADER "hw_100_500.h"
