@@ -53,6 +53,7 @@
 #endif
 #include "shutdown.h"
 #include "mempools.h"
+#include "buzzer.h"
 
 /*
  * HW resources used:
@@ -267,6 +268,11 @@ int main(void) {
 	timeout_configure(appconf->timeout_msec, appconf->timeout_brake_current);
 
 	mempools_free_appconf(appconf);
+
+	// Quick beep after boot (regardless of selected app)
+	beep_on(1);
+	chThdSleepMilliseconds(50);
+	beep_off(1);
 
 #if HAS_BLACKMAGIC
 	bm_init();
