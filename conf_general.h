@@ -256,6 +256,10 @@
 #define BRAKE_LIGHT_OFF() {}
 #endif
 
+#ifndef REVERSE_ERPM_REPORTING
+#define REVERSE_ERPM_REPORTING 1
+#endif
+
 /*
  * Output WS2811 signal on the HALL1 pin. Notice that hall sensors can't be used
  * at the same time.
