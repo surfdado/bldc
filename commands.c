@@ -374,28 +374,28 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_iq(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
-			buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind);
+			buffer_append_float16(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_duty_cycle_now(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 7)) {
-			buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 8)) {
 			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, mc_interface_get_amp_hours(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_amp_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, mc_interface_get_amp_hours_charged(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_amp_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_watt_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_watt_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
+			buffer_append_int32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_tachometer_value(false), &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
 			buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
@@ -818,13 +818,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, val.current_in_tot, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind);
+			buffer_append_float16(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_duty_cycle_now(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
-			buffer_append_float32(send_buffer, mc_interface_get_speed(), 1e3, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_speed(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 7)) {
 			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
@@ -833,19 +833,19 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, battery_level, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, val.ah_tot, 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * val.ah_tot, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, val.ah_charge_tot, 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * val.ah_charge_tot, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, val.wh_tot, 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * val.wh_tot, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, val.wh_charge_tot, 1e4, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * val.wh_charge_tot, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_float32(send_buffer, mc_interface_get_distance(), 1e3, &ind);
+			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_distance(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
 			buffer_append_float32(send_buffer, mc_interface_get_distance_abs(), 1e3, &ind);
