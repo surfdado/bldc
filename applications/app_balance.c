@@ -55,6 +55,12 @@ typedef enum {
 	FAULT_STARTUP
 } BalanceState;
 
+
+typedef enum {
+	BRAKE_NORMAL,
+	BRAKE_DOWNHILL
+} BrakeMode;
+
 typedef enum {
 	CENTERING = 0,
 	TILTBACK
@@ -111,6 +117,7 @@ static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
+static float torquetilt_brk_start_current, torquetilt_brk_delay;
 static float torquetilt_filtered_current, torquetilt_target, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
 static SetpointAdjustmentType setpointAdjustmentType;
@@ -135,6 +142,20 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
+
+	float torquetilt_start_current = balance_conf.torquetilt_start_current;
+	int sc = (int) torquetilt_start_current;
+	float sc_rest = torquetilt_start_current - sc;
+	if (sc_rest >= 0.3)
+		torquetilt_brk_start_current = sc_rest * torquetilt_start_current;
+	else
+		torquetilt_brk_start_current = torquetilt_start_current;
+
+	float torquetilt_filter = balance_conf.torquetilt_filter * 100;
+	int ttf = (int) torquetilt_filter;
+	float ttf_rest = torquetilt_filter - ttf;
+	if (ttf_rest > 0.1)
+		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -384,14 +405,49 @@ void calculate_setpoint_interpolated(void){
 	}
 }
 
+static float brake_timer;
+static BrakeMode brake_mode = BRAKE_NORMAL;
+
 void apply_torquetilt(void){
+	float start_current = balance_conf.torquetilt_start_current;
+
 	// Filter current (Basic LPF)
 	torquetilt_filtered_current = ((1-balance_conf.torquetilt_filter) * motor_current) + (balance_conf.torquetilt_filter * torquetilt_filtered_current);
+
+	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
+		// current is negative, so we are braking or going downhill
+		start_current = torquetilt_brk_start_current;
+
+		if (brake_mode == BRAKE_NORMAL) {
+			if (ST2MS(current_time - brake_timer) > torquetilt_brk_delay) {
+				// enable downhill mode after a delay
+				brake_mode = BRAKE_DOWNHILL;
+				if (abs_erpm > 500)
+					beep_alert(1, 1);
+			}
+			else {
+				// Only a sustained current above the threshold will trigger downhill mode 
+				if (fabsf(torquetilt_filtered_current) < start_current) {
+					brake_timer = current_time;
+				}
+				// Never Torque Tilt in BRAKE_NORMAL mode, to allow tail drags etc
+				torquetilt_filtered_current = 0;
+			}
+		}
+	}
+	else {
+		// cruising / accelerating - the only way to exit downhill mode
+		if ((brake_mode == BRAKE_DOWNHILL) && (abs_erpm > 500))
+			beep_alert(1, 0);
+		brake_timer = current_time;
+		brake_mode = BRAKE_NORMAL;
+	}
+
 	// Wat is this line O_o
 	// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 	// Finally multiply it by sign motor current to get directionality back
-	torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - balance_conf.torquetilt_start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
