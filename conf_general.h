@@ -276,6 +276,10 @@
 #define BRAKE_LIGHT_OFF() {}
 #endif
 
+#ifndef REVERSE_ERPM_REPORTING
+#define REVERSE_ERPM_REPORTING 1
+#endif
+
 /*
  * Servo output driver
  */
