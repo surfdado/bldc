@@ -700,22 +700,26 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Issue 1 beep for each volt below 45
 				double bat_volts = GET_INPUT_VOLTAGE();
-				if (bat_volts < 45) {
+				double threshold = balance_conf.tiltback_low_voltage + 5;
+				if (bat_volts < threshold) {
 					chThdSleepMilliseconds(400);
-					while (bat_volts < 45) {
+					while (bat_volts < threshold) {
 						chThdSleepMilliseconds(200);
 						beep_on(1);
 						chThdSleepMilliseconds(300);
 						beep_off(1);
-						bat_volts = bat_volts + 1;
+						threshold -= 1;
 					}
 				}
+				autosuspend_timer = -1;
+
 				break;
 			case (RUNNING):
 			case (RUNNING_TILTBACK_DUTY):
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
 			case (RUNNING_TILTBACK_CONSTANT):
+				autosuspend_timer = -1;
 
 				// Check for faults
 				if(check_faults(false)){
@@ -819,15 +823,36 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
 			case (FAULT_STARTUP):
-				if (new_ride_state != RIDE_OFF) {
+				if (autosuspend_timer == -1)
 					autosuspend_timer = current_time;
+
+				if (autosuspend_timeout &&
+					(ST2S(current_time - autosuspend_timer) > autosuspend_timeout)){
+					// Timeout: no way to return from here (requires power cycling)
+
+					// beep-beep-beeeep
+					beep_on(true);
+					chThdSleepMilliseconds(100);
+					beep_off(true);
+					chThdSleepMilliseconds(100);
+					beep_on(true);
+					chThdSleepMilliseconds(100);
+					beep_off(true);
+					chThdSleepMilliseconds(100);
+					beep_on(true);
+					chThdSleepMilliseconds(500);
+					beep_off(true);
+
+					// stop balance app
+					app_balance_stop();
+
+					// now reduce power to minimum
+					//imu_stop();
+					//hw_stop_i2c();
+					//LED_GREEN_OFF();
+					break;
 				}
-				else {
-					if(autosuspend_timeout && (ST2S(current_time - autosuspend_timer) > autosuspend_timeout)) {
-						app_balance_stop();
-						break;
-					}
-				}
+
 				new_ride_state = RIDE_OFF;
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
