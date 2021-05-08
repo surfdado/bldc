@@ -120,6 +120,8 @@ static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float torquetilt_brk_start_current, torquetilt_brk_delay;
 static float torquetilt_filtered_current, torquetilt_target, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
+static int booster_beep = 0;
+static int booster_beeping = 0;
 static SetpointAdjustmentType setpointAdjustmentType;
 static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportional, yaw_pid_value, yaw_setpoint;
 static systime_t current_time, last_time, diff_time;
@@ -151,11 +153,19 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	else
 		torquetilt_brk_start_current = torquetilt_start_current;
 
+	torquetilt_brk_delay = 0;
+
 	float torquetilt_filter = balance_conf.torquetilt_filter * 100;
 	int ttf = (int) torquetilt_filter;
 	float ttf_rest = torquetilt_filter - ttf;
 	if (ttf_rest > 0.1)
 		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
+
+	float booster_angle = balance_conf.booster_angle;
+	int angl = (int) booster_angle;
+	float angl_rest = booster_angle - angl;
+	if (angl_rest == 0.1)
+		booster_beep = 1;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -410,6 +420,8 @@ static BrakeMode brake_mode = BRAKE_NORMAL;
 
 void apply_torquetilt(void){
 	float start_current = balance_conf.torquetilt_start_current;
+	if (start_current == 0)
+		return;
 
 	// Filter current (Basic LPF)
 	torquetilt_filtered_current = ((1-balance_conf.torquetilt_filter) * motor_current) + (balance_conf.torquetilt_filter * torquetilt_filtered_current);
@@ -423,7 +435,7 @@ void apply_torquetilt(void){
 				// enable downhill mode after a delay
 				brake_mode = BRAKE_DOWNHILL;
 				if (abs_erpm > 500)
-					beep_alert(1, 1);
+				{}//beep_alert(1, 1);
 			}
 			else {
 				// Only a sustained current above the threshold will trigger downhill mode 
@@ -438,7 +450,7 @@ void apply_torquetilt(void){
 	else {
 		// cruising / accelerating - the only way to exit downhill mode
 		if ((brake_mode == BRAKE_DOWNHILL) && (abs_erpm > 500))
-			beep_alert(1, 0);
+		{}//beep_alert(1, 0);
 		brake_timer = current_time;
 		brake_mode = BRAKE_NORMAL;
 	}
@@ -763,12 +775,19 @@ static THD_FUNCTION(balance_thread, arg) {
 				abs_proportional = fabsf(proportional);
 				if(abs_proportional > balance_conf.booster_angle){
 					if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
-						booster_pid = (balance_conf.booster_current * SIGN(proportional)) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
+						booster_pid = balance_conf.booster_current * SIGN(proportional) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
 					}else{
 						booster_pid = balance_conf.booster_current * SIGN(proportional);
 					}
+					if (booster_beep && !booster_beeping) {
+						beep_alert(1, 0);
+						booster_beeping = 1;
+					}
 				}
 				else {
+					if (booster_beeping) {
+						booster_beeping = 0;
+					}
 					booster_pid = 0;
 				}
 				pid_value += booster_pid;
