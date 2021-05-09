@@ -747,8 +747,6 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
-				// Apply deadzone
-				proportional = apply_deadzone(proportional);
 				// Resume real PID maths
 				integral = integral + proportional;
 				derivative = proportional - last_proportional;
@@ -759,7 +757,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
-				pid_value = (balance_conf.kp * proportional) + (balance_conf.ki * integral) + (balance_conf.kd * derivative);
+				// Add speed dependent component to P:
+				float kp = balance_conf.kp * (1 + abs_erpm / 20000 * balance_conf.deadzone);
+
+				pid_value = (kp * proportional) + (balance_conf.ki * integral) + (balance_conf.kd * derivative);
 
 				last_proportional = proportional;
 
