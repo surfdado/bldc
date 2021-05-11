@@ -99,7 +99,7 @@ static thread_t *app_thread;
 // Config values
 static volatile balance_config balance_conf;
 static volatile imu_config imu_conf;
-static float startup_step_size, tiltback_step_size, torquetilt_step_size, turntilt_step_size;
+static float startup_step_size, tiltback_step_size, torquetilt_step_size, torquetilt_step_size_down, turntilt_step_size;
 
 // Runtime values read from elsewhere
 static float pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -144,6 +144,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
+
+	// to avoid oscillations:
+	torquetilt_step_size_down = torquetilt_step_size;
+	if (balance_conf.torquetilt_speed > 2.5)
+		torquetilt_step_size_down /= 3;
+	else if (balance_conf.torquetilt_speed > 1.5)
+		torquetilt_step_size_down /= 2;
 
 	float torquetilt_start_current = balance_conf.torquetilt_start_current;
 	int sc = (int) torquetilt_start_current;
@@ -461,7 +468,7 @@ void apply_torquetilt(void){
 	}else if (torquetilt_target - torquetilt_interpolated > 0){
 		torquetilt_interpolated += torquetilt_step_size;
 	}else{
-		torquetilt_interpolated -= torquetilt_step_size;
+		torquetilt_interpolated -= torquetilt_step_size_down;
 	}
 	setpoint += torquetilt_interpolated;
 }
