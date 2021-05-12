@@ -794,31 +794,6 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				pid_value += booster_pid;
 
-				if(balance_conf.multi_esc){
-					// Calculate setpoint
-					if(abs_duty_cycle < .02){
-						yaw_setpoint = 0;
-					} else if(avg_erpm < 0){
-						yaw_setpoint = (-balance_conf.roll_steer_kp * roll_angle) + (balance_conf.roll_steer_erpm_kp * roll_angle * avg_erpm);
-					} else{
-						yaw_setpoint = (balance_conf.roll_steer_kp * roll_angle) + (balance_conf.roll_steer_erpm_kp * roll_angle * avg_erpm);
-					}
-					// Do PID maths
-					yaw_proportional = yaw_setpoint - gyro[2];
-					yaw_integral = yaw_integral + yaw_proportional;
-					yaw_derivative = yaw_proportional - yaw_last_proportional;
-
-					yaw_pid_value = (balance_conf.yaw_kp * yaw_proportional) + (balance_conf.yaw_ki * yaw_integral) + (balance_conf.yaw_kd * yaw_derivative);
-
-					if(yaw_pid_value > balance_conf.yaw_current_clamp){
-						yaw_pid_value = balance_conf.yaw_current_clamp;
-					}else if(yaw_pid_value < -balance_conf.yaw_current_clamp){
-						yaw_pid_value = -balance_conf.yaw_current_clamp;
-					}
-
-					yaw_last_proportional = yaw_proportional;
-				}
-
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
 
