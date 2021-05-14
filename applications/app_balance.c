@@ -131,6 +131,8 @@ static float max_temp_fet;
 static RideState ride_state, new_ride_state;
 static float autosuspend_timer, autosuspend_timeout;
 
+float expki, expkd, expkp, expprop, expsetpoint, ttt;
+
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
 	imu_conf = *conf2;
@@ -467,6 +469,7 @@ void apply_torquetilt(void){
 	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 	// Finally multiply it by sign motor current to get directionality back
 	torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	ttt = torquetilt_target;
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
@@ -780,6 +783,12 @@ static THD_FUNCTION(balance_thread, arg) {
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 
 				last_proportional = proportional;
+
+				expkp = kp;
+				expki = ki;
+				expkd = kd;
+				expprop = proportional;
+				expsetpoint = setpoint;
 
 				// Apply Booster
 				int booster_pid;
