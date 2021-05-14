@@ -79,6 +79,8 @@ static mutex_t terminal_mutex;
 static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
 
+extern float expki, expkd, expkp, expprop, expsetpoint, ttt;
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&send_buffer_mutex);
@@ -368,10 +370,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_id(), 1e2, &ind);
+			buffer_append_float32(send_buffer, expsetpoint, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_iq(), 1e2, &ind);
+			buffer_append_float32(send_buffer, expprop, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
 			buffer_append_float16(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_duty_cycle_now(), 1e3, &ind);
@@ -383,28 +385,28 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_amp_hours(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, expkp, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_amp_hours_charged(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, expki, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_watt_hours(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_watt_hours_charged(false), 1e4, &ind);
+			buffer_append_float32(send_buffer, ttt, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_int32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_tachometer_value(false), &ind);
+			buffer_append_int32(send_buffer, expsetpoint, &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
+			buffer_append_int32(send_buffer, expprop, &ind);
 		}
 		if (mask & ((uint32_t)1 << 15)) {
 			send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 16)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_float32(send_buffer, expsetpoint, 1e6, &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
 			uint8_t current_controller_id = app_get_configuration()->controller_id;
