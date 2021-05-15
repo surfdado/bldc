@@ -22,7 +22,7 @@
 
 #include "drv8323s.h"
 
-#define HW_NAME                 "Little FOCer+"
+#define HW_NAME                 "Little FOCer+ TTDelay"
 
 // HW properties
 #define HW_HAS_DRV8323S
