@@ -225,6 +225,11 @@ bool check_faults(bool ignoreTimers){
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
+		else if ((abs_erpm < balance_conf.fault_adc_half_erpm) && (fabsf(pitch_angle) > 15)) {
+			// QUICK STOP
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
 	} else {
 		fault_switch_timer = current_time;
 	}
