@@ -132,7 +132,7 @@ static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
 static float autosuspend_timer, autosuspend_timeout;
-static float acceleration, erpm_avg, last_erpm;//, acc_hist[ACCHISTSIZE];
+static float /*acceleration, */ erpm_avg, last_erpm;
 static int accidx;
 
 float expacc, expaccmin, expaccmax, expavg;
@@ -181,6 +181,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (angl_rest == 0.1)
 		booster_beep = 1;
 
+	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
+	balance_conf.kp = fminf(balance_conf.kp, 10);
+	balance_conf.ki = fminf(balance_conf.ki, 0.01);
+	balance_conf.kd = fminf(balance_conf.kd, 1500);
+
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
 	case SHUTDOWN_MODE_OFF_AFTER_1M: autosuspend_timeout = 60; break;
@@ -225,12 +230,10 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
-	acceleration = 0;
+	//acceleration = 0;
 	expaccmin = 10000.0;
 	expaccmax = 0.0;
 	expavg = 0.0;
-	/*for (int i=0; i<ACCHISTSIZE; i++)
-	  acc_hist[i] = 0;*/
 	accidx = 0;
 	erpm_avg = 0;
 }
@@ -667,16 +670,16 @@ static THD_FUNCTION(balance_thread, arg) {
 		erpm_avg += erpm;
 		if (accidx == ACCHISTSIZE) {
 			float new_erpm = erpm_avg / ACCHISTSIZE;
-			acceleration = new_erpm - last_erpm;
+			float acceleration = new_erpm - last_erpm;
 			last_erpm = new_erpm;
 			accidx = 0;
 			erpm_avg = 0;
 			expavg = expavg * 0.9 + acceleration * 0.1;
 		}
 
-		expacc = acceleration;
-		expaccmin = fminf(expaccmin, acceleration);
-		expaccmax = fmaxf(expaccmax, acceleration);
+		//expacc = acceleration;
+		//expaccmin = fminf(expaccmin, acceleration);
+		//expaccmax = fmaxf(expaccmax, acceleration);
 
 		if(balance_conf.multi_esc){
 			avg_erpm = erpm;
@@ -794,7 +797,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
 				apply_torquetilt();
-				apply_turntilt();
+				//apply_turntilt();
 
 				update_beep_alert();
 
@@ -804,8 +807,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				integral = integral + proportional;
 				derivative = proportional - last_proportional;
 
-				if (abs_erpm < balance_conf.roll_steer_kp)
-					integral = 0;
+				//if (abs_erpm < balance_conf.roll_steer_kp)
+				//	integral = 0;
 
 				// Apply D term only filter
 				if(balance_conf.kd_pt1_frequency > 0){
@@ -814,10 +817,10 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Add speed dependent component to P:
-				float pid_modifier = abs_erpm / 10000 * balance_conf.deadzone;
-				float kp = fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
-				float ki = fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
-				float kd = fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
+				//float pid_modifier = abs_erpm / 10000 * balance_conf.deadzone;
+				float kp = balance_conf.kp; //fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
+				float ki = balance_conf.ki; //fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
+				float kd = balance_conf.kd; //fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
 
 				float last_abs_erpm = fabsf(last_erpm);
 				if (last_abs_erpm < 500) {
@@ -828,7 +831,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				last_proportional = proportional;
 
-				expkp = kp;
+				/*expkp = kp;
 				expki = ki;
 				expkd = kd;
 				expprop = proportional;
@@ -854,7 +857,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					booster_pid = 0;
 				}
-				pid_value += booster_pid;
+				pid_value += booster_pid;*/
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
