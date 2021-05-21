@@ -96,6 +96,8 @@ static THD_WORKING_AREA(balance_thread_wa, 2048); // 2kb stack for this thread
 
 static thread_t *app_thread;
 
+#define ACCHISTSIZE 50
+
 // Config values
 static volatile balance_config balance_conf;
 static volatile imu_config imu_conf;
@@ -130,7 +132,10 @@ static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
 static float autosuspend_timer, autosuspend_timeout;
+static float acceleration, erpm_avg, last_erpm;//, acc_hist[ACCHISTSIZE];
+static int accidx;
 
+float expacc, expaccmin, expaccmax, expavg;
 float expki, expkd, expkp, expprop, expsetpoint, ttt;
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
@@ -220,6 +225,14 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
+	acceleration = 0;
+	expaccmin = 10000.0;
+	expaccmax = 0.0;
+	expavg = 0.0;
+	/*for (int i=0; i<ACCHISTSIZE; i++)
+	  acc_hist[i] = 0;*/
+	accidx = 0;
+	erpm_avg = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -463,7 +476,14 @@ void apply_torquetilt(void){
 	// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 	// Finally multiply it by sign motor current to get directionality back
-	torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	float magic_ratio = expavg / torquetilt_filtered_current;
+	if (magic_ratio < 1) { // magic ratio
+		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	}
+	else {
+		// If the magic ratio is > 1 then we must be just accelerating. No TT here!!
+		torquetilt_target = 0;
+	}
 	ttt = torquetilt_target;
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
@@ -637,6 +657,22 @@ static THD_FUNCTION(balance_thread, arg) {
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
+
+		accidx++;
+		erpm_avg += erpm;
+		if (accidx == ACCHISTSIZE) {
+			float new_erpm = erpm_avg / ACCHISTSIZE;
+			acceleration = new_erpm - last_erpm;
+			last_erpm = new_erpm;
+			accidx = 0;
+			erpm_avg = 0;
+			expavg = expavg * 0.9 + acceleration * 0.1;
+		}
+
+		expacc = acceleration;
+		expaccmin = fminf(expaccmin, acceleration);
+		expaccmax = fmaxf(expaccmax, acceleration);
+
 		if(balance_conf.multi_esc){
 			avg_erpm = erpm;
 			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
@@ -763,6 +799,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				integral = integral + proportional;
 				derivative = proportional - last_proportional;
 
+				if (abs_erpm < balance_conf.roll_steer_kp)
+					integral = 0;
+
 				// Apply D term only filter
 				if(balance_conf.kd_pt1_frequency > 0){
 					d_pt1_state = d_pt1_state + d_pt1_k * (derivative - d_pt1_state);
@@ -774,6 +813,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				float kp = fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
 				float ki = fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
 				float kd = fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
+
+				float last_abs_erpm = fabsf(last_erpm);
+				if (last_abs_erpm < 500) {
+					ki = ki / 500 * last_abs_erpm;
+				}
 
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 
