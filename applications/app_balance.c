@@ -131,6 +131,7 @@ static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_t
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
+static float braking_softness;
 static float autosuspend_timer, autosuspend_timeout;
 static float /*acceleration, */ erpm_avg, last_erpm;
 static int accidx;
@@ -174,6 +175,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float ttf_rest = torquetilt_filter - ttf;
 	if (ttf_rest > 0.1)
 		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
+
+	braking_softness = 1;
+	float kdf = balance_conf.kd;
+	int kdi = (int) kdi;
+	float kd_rest = kdf - kdi;
+	if (kd_rest > 0.4)
+		braking_softness = kd_rest;	// convert to ms
 
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
@@ -807,9 +815,6 @@ static THD_FUNCTION(balance_thread, arg) {
 				integral = integral + proportional;
 				derivative = proportional - last_proportional;
 
-				//if (abs_erpm < balance_conf.roll_steer_kp)
-				//	integral = 0;
-
 				// Apply D term only filter
 				if(balance_conf.kd_pt1_frequency > 0){
 					d_pt1_state = d_pt1_state + d_pt1_k * (derivative - d_pt1_state);
@@ -818,17 +823,25 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Add speed dependent component to P:
 				//float pid_modifier = abs_erpm / 10000 * balance_conf.deadzone;
-				float kp = balance_conf.kp; //fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
-				float ki = balance_conf.ki; //fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
-				float kd = balance_conf.kd; //fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
+				//float pid_scale = 1;
+				//if (SIGN(motor_current) != SIGN(erpm))
+				//	pid_scale = braking_softness;
 
+				// guardrails:
+				//float kp = fminf(balance_conf.kp, 10);; //fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
+				//float ki = fminf(balance_conf.ki * pid_scale, 0.01); //fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
+				//float kd = fminf(balance_conf.kd, 1500); //fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
+				float kp = balance_conf.kp;
+				float ki = balance_conf.ki;
+				float kd = balance_conf.kd;
+
+				// Further increase softness when near stopping speed
 				float last_abs_erpm = fabsf(last_erpm);
 				if (last_abs_erpm < 500) {
 					ki = ki / 500 * last_abs_erpm;
 				}
 
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
-
 				last_proportional = proportional;
 
 				/*expkp = kp;
