@@ -812,9 +812,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
 				apply_torquetilt();
-				//apply_turntilt();
-
-				update_beep_alert();
+				apply_turntilt();
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
@@ -887,7 +885,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
 
-				if (abs_erpm > balance_conf.fault_adc_half_erpm) {
+				update_beep_alert();
+
+				/*if (abs_erpm > balance_conf.fault_adc_half_erpm) {
 					// we're at riding speed => turn on the forward facing lights
 					if (pid_value > -4) {
 						if (erpm > 0) {
@@ -911,7 +911,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				if (new_ride_state != ride_state){
 					update_lights();
-				}
+					}*/
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
