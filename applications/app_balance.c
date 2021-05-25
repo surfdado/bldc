@@ -131,7 +131,7 @@ static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_t
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
-static float braking_softness;
+static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
 static float /*acceleration, */ erpm_avg, last_erpm;
 static int accidx;
@@ -176,12 +176,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (ttf_rest > 0.1)
 		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
 
-	braking_softness = 1;
 	float kdf = balance_conf.kd;
 	int kdi = (int) kdi;
-	float kd_rest = kdf - kdi;
-	if (kd_rest > 0.4)
-		braking_softness = kd_rest;	// convert to ms
+	float kd_rest = (kdf - kdi) * 1000;
+	int brake_pid_scaling = kd_rest;
+	int brake_kp_scaling = kd_rest / 100;
+	int brake_ki_scaling = (kd_rest - brake_kp_scaling) / 10;
+	int brake_kd_scaling = kd_rest - brake_kp_scaling - brake_ki_scaling;
 
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
@@ -190,9 +191,15 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		booster_beep = 1;
 
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
-	balance_conf.kp = fminf(balance_conf.kp, 10);
-	balance_conf.ki = fminf(balance_conf.ki, 0.01);
-	balance_conf.kd = fminf(balance_conf.kd, 1500);
+	kp_acc = fminf(balance_conf.kp, 10);
+	ki_acc = fminf(balance_conf.ki, 0.01);
+	kd_acc = fminf(balance_conf.kd, 1500);
+	kp_brk = fminf(balance_conf.kp / 10 * brake_kp_scaling, 5);
+	ki_brk = fminf(balance_conf.ki / 10 * brake_ki_scaling, 0.005);
+	kd_brk = fminf(balance_conf.kd / 10 * brake_kd_scaling, 1200);
+	kp = kp_brk;
+	ki = ki_brk;
+	kd = kd_brk;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -824,22 +831,27 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Add speed dependent component to P:
 				//float pid_modifier = abs_erpm / 10000 * balance_conf.deadzone;
 				//float pid_scale = 1;
-				//if (SIGN(motor_current) != SIGN(erpm))
-				//	pid_scale = braking_softness;
-
-				// guardrails:
-				//float kp = fminf(balance_conf.kp, 10);; //fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
-				//float ki = fminf(balance_conf.ki * pid_scale, 0.01); //fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
-				//float kd = fminf(balance_conf.kd, 1500); //fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
-				float kp = balance_conf.kp;
-				float ki = balance_conf.ki;
-				float kd = balance_conf.kd;
+				float kp_target, ki_target, kd_target;
+				if (SIGN(motor_current) != SIGN(erpm)) {
+					kp_target = kp_brk;
+					ki_target = ki_brk;
+					kd_target = kd_brk;
+				}
+				else {
+					kp_target = kp_acc;
+					ki_target = ki_acc;
+					kd_target = kd_acc;
+				}
 
 				// Further increase softness when near stopping speed
 				float last_abs_erpm = fabsf(last_erpm);
 				if (last_abs_erpm < 500) {
-					ki = ki / 500 * last_abs_erpm;
+					ki_target = ki_target / 500 * last_abs_erpm;
 				}
+
+				kp = kp * 0.9 + kp_target * 0.1;
+				ki = ki * 0.9 + ki_target * 0.1;
+				kd = kd * 0.9 + kd_target * 0.1;
 
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 				last_proportional = proportional;
