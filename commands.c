@@ -385,14 +385,14 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, expacc, 1e4, &ind);
+			buffer_append_float32(send_buffer, expkp, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, expaccmin, 1e4, &ind);
+			buffer_append_float32(send_buffer, expki, 1e4, &ind);
 			expaccmin = 10000.0;
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, expaccmax, 1e4, &ind);
+			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
 			expaccmax = 0.0;
 		}
 		if (mask & ((uint32_t)1 << 12)) {

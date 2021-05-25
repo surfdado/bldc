@@ -894,12 +894,12 @@ static THD_FUNCTION(balance_thread, arg) {
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 				last_proportional = proportional;
 
-				/*expkp = kp;
+				expkp = kp;
 				expki = ki;
 				expkd = kd;
+				/*
 				expprop = proportional;
 				expsetpoint = setpoint;
-
 				// Apply Booster
 				int booster_pid;
 				abs_proportional = fabsf(proportional);
