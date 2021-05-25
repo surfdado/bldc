@@ -131,7 +131,7 @@ static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_t
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
-static float braking_softness;
+static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
 static float /*acceleration, */ erpm_avg, last_erpm;
 static int accidx;
@@ -176,23 +176,52 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (ttf_rest > 0.1)
 		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
 
-	braking_softness = 1;
-	float kdf = balance_conf.kd;
-	int kdi = (int) kdi;
-	float kd_rest = kdf - kdi;
-	if (kd_rest > 0.4)
-		braking_softness = kd_rest;	// convert to ms
-
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
 	float angl_rest = booster_angle - angl;
 	if (angl_rest == 0.1)
 		booster_beep = 1;
 
+	float kdf = balance_conf.kd;
+	int kdi = (int) kdf;
+	float kd_rest = (kdf - kdi) * 1000;
+	int brake_pid_scaling = kd_rest;
+	int brake_kp_scaling = brake_pid_scaling / 100;
+	int brake_ki_scaling = (brake_pid_scaling - (brake_kp_scaling * 100)) / 10;
+	int brake_kd_scaling = brake_pid_scaling - (brake_kp_scaling * 100) - (brake_ki_scaling * 10);
+	if (brake_kp_scaling < 2) {
+		brake_kp_scaling = 10;
+		brake_ki_scaling = 10;
+		brake_kd_scaling = 10;
+	}		
+	if (brake_ki_scaling < 1)
+		brake_ki_scaling = 10;
+	if (brake_kd_scaling < 5)
+		brake_kd_scaling = 10;
+
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
-	balance_conf.kp = fminf(balance_conf.kp, 10);
-	balance_conf.ki = fminf(balance_conf.ki, 0.01);
-	balance_conf.kd = fminf(balance_conf.kd, 1500);
+	kp_acc = fminf(balance_conf.kp, 10);
+	ki_acc = fminf(balance_conf.ki, 0.01);
+	kd_acc = fminf(balance_conf.kd, 1500);
+	kp_brk = fminf(kp_acc / 10.0 * brake_kp_scaling, 5);
+	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
+	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1200);
+
+	if (ki_brk == 0.005) {
+		beep_on(1);
+		chThdSleepMilliseconds(100);
+		beep_off(1);
+		chThdSleepMilliseconds(100);
+		beep_on(1);
+		chThdSleepMilliseconds(100);
+		beep_off(1);
+	}
+
+	kp = kp_brk;
+	ki = ki_brk;
+	kd = kd_brk;
+
+	pid_value = 0;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -244,6 +273,10 @@ void reset_vars(void){
 	expavg = 0.0;
 	accidx = 0;
 	erpm_avg = 0;
+	// minimum values (even 0,0,0 is possible) for soft start:
+	kp = 1;
+	ki = 0;
+	kd = 100;
 }
 
 float app_balance_get_pid_output(void) {
@@ -819,25 +852,44 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
-				// Add speed dependent component to P:
-				//float pid_modifier = abs_erpm / 10000 * balance_conf.deadzone;
-				//float pid_scale = 1;
-				//if (SIGN(motor_current) != SIGN(erpm))
-				//	pid_scale = braking_softness;
-
-				// guardrails:
-				//float kp = fminf(balance_conf.kp, 10);; //fminf(balance_conf.kp * (1 + pid_modifier / 2), 10);
-				//float ki = fminf(balance_conf.ki * pid_scale, 0.01); //fminf(balance_conf.ki * (1 + pid_modifier * 1.5), 0.01);
-				//float kd = fminf(balance_conf.kd, 1500); //fminf(balance_conf.kd * (1 + pid_modifier / 2), 1500);
-				float kp = balance_conf.kp;
-				float ki = balance_conf.ki;
-				float kd = balance_conf.kd;
-
-				// Further increase softness when near stopping speed
-				float last_abs_erpm = fabsf(last_erpm);
-				if (last_abs_erpm < 500) {
-					ki = ki / 500 * last_abs_erpm;
+				/*float last_abs_erpm = fabsf(last_erpm);
+				float kp_target, ki_target, kd_target;
+				if (last_abs_erpm < 800) {
+					ki_target = ki_acc / 800 * last_abs_erpm;
 				}
+				else {
+					ki_target = ki_acc;
+				}
+
+				//kp = kp * 0.95 + kp_target * 0.05;
+				ki = ki * 0.99 + ki_target * 0.01;
+				//kd = kd * 0.95 + kd_target * 0.05;
+
+				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
+				last_proportional = proportional;*/
+
+				float last_abs_erpm = fabsf(last_erpm);
+				float kp_target, ki_target, kd_target;
+				if (SIGN(proportional) != SIGN(erpm)) {
+					// braking
+					kp_target = kp_brk;
+					ki_target = ki_brk;
+					kd_target = kd_brk;
+				}
+				else {
+					// acceleration
+					kp_target = kp_acc;
+					ki_target = ki_acc;
+					kd_target = kd_acc;
+				}
+				if (last_abs_erpm < 500) {
+					// Increase softness when near stopping speed
+					ki_target = ki_target / 500 * last_abs_erpm;
+				}
+
+				kp = kp * 0.997 + kp_target * 0.003;
+				ki = ki * 0.997 + ki_target * 0.003;
+				kd = kd * 0.997 + kd_target * 0.003;
 
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 				last_proportional = proportional;
