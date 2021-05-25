@@ -183,6 +183,12 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	int brake_kp_scaling = kd_rest / 100;
 	int brake_ki_scaling = (kd_rest - brake_kp_scaling) / 10;
 	int brake_kd_scaling = kd_rest - brake_kp_scaling - brake_ki_scaling;
+	if (brake_kp_scaling < 3)
+		brake_kp_scaling = 10;
+	if (brake_ki_scaling < 2)
+		brake_ki_scaling = 10;
+	if (brake_kd_scaling < 5)
+		brake_kd_scaling = 10;
 
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
