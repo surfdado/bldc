@@ -80,6 +80,7 @@ static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
 
 extern float expacc, expavg, expaccmin, expaccmax, expki, expkd, expkp, expprop, expsetpoint, ttt;
+extern float exp_grunt_factor, exp_g_max, exp_g_min;
 
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
@@ -358,22 +359,24 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 		if (mask & ((uint32_t)1 << 0)) {
-			buffer_append_float16(send_buffer, mc_interface_temp_fet_filtered(), 1e1, &ind);
+			buffer_append_float16(send_buffer, ttt, 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 1)) {
-			buffer_append_float16(send_buffer, mc_interface_temp_motor_filtered(), 1e1, &ind);
+			buffer_append_float16(send_buffer, expsetpoint, 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 2)) {
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
+			buffer_append_float32(send_buffer, exp_grunt_factor/*mc_interface_read_reset_avg_input_current()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, ttt, 1e2, &ind);
+			buffer_append_float32(send_buffer, exp_g_min, 1e2, &ind);
+			exp_g_min = 0;
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, expsetpoint, 1e2, &ind);
+			buffer_append_float32(send_buffer, exp_g_max, 1e2, &ind);
+			exp_g_max = 0;
 		}
 		if (mask & ((uint32_t)1 << 6)) {
 			buffer_append_float16(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_duty_cycle_now(), 1e3, &ind);
@@ -389,11 +392,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 		if (mask & ((uint32_t)1 << 10)) {
 			buffer_append_float32(send_buffer, expki, 1e4, &ind);
-			expaccmin = 10000.0;
 		}
 		if (mask & ((uint32_t)1 << 11)) {
 			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
-			expaccmax = 0.0;
 		}
 		if (mask & ((uint32_t)1 << 12)) {
 			buffer_append_float32(send_buffer, expavg, 1e4, &ind);

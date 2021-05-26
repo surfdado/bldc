@@ -138,6 +138,7 @@ static int accidx;
 
 float expacc, expaccmin, expaccmax, expavg;
 float expki, expkd, expkp, expprop, expsetpoint, ttt;
+float exp_grunt_factor, exp_g_max, exp_g_min;
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
@@ -277,6 +278,8 @@ void reset_vars(void){
 	kp = 1;
 	ki = 0;
 	kd = 100;
+	exp_g_max = 0;
+	exp_g_min = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -525,8 +528,8 @@ void apply_torquetilt(void){
 	// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 	// Finally multiply it by sign motor current to get directionality back
-	float magic_ratio = expavg / torquetilt_filtered_current;
-	if (magic_ratio < 1) { // magic ratio
+	float torque_efficiency = expavg / torquetilt_filtered_current;
+	if (torque_efficiency < 1) { // magic ratio
 		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
 	}
 	else {
@@ -534,6 +537,12 @@ void apply_torquetilt(void){
 		torquetilt_target = 0;
 	}
 	ttt = torquetilt_target;
+	float accel = expavg;
+	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
+		accel = SIGN(torquetilt_filtered_current) * 0.1;
+	exp_grunt_factor = fmaxf(fminf(torquetilt_filtered_current / accel, 20), -20);
+	exp_g_max = fmaxf(exp_grunt_factor, exp_g_max);
+	exp_g_min = fminf(exp_grunt_factor, exp_g_min);
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
@@ -852,22 +861,6 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
-				/*float last_abs_erpm = fabsf(last_erpm);
-				float kp_target, ki_target, kd_target;
-				if (last_abs_erpm < 800) {
-					ki_target = ki_acc / 800 * last_abs_erpm;
-				}
-				else {
-					ki_target = ki_acc;
-				}
-
-				//kp = kp * 0.95 + kp_target * 0.05;
-				ki = ki * 0.99 + ki_target * 0.01;
-				//kd = kd * 0.95 + kd_target * 0.05;
-
-				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
-				last_proportional = proportional;*/
-
 				float last_abs_erpm = fabsf(last_erpm);
 				float kp_target, ki_target, kd_target;
 				if (SIGN(proportional) != SIGN(erpm)) {
@@ -894,12 +887,10 @@ static THD_FUNCTION(balance_thread, arg) {
 				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 				last_proportional = proportional;
 
-				expkp = kp;
 				expki = ki;
-				expkd = kd;
+				expsetpoint = setpoint;
 				/*
 				expprop = proportional;
-				expsetpoint = setpoint;
 				// Apply Booster
 				int booster_pid;
 				abs_proportional = fabsf(proportional);
