@@ -547,9 +547,9 @@ void apply_torquetilt(void){
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
 	}else if (torquetilt_target - torquetilt_interpolated > 0){
-		torquetilt_interpolated += torquetilt_step_size;
+		torquetilt_interpolated += torquetilt_step_size_down;
 	}else{
-		torquetilt_interpolated -= torquetilt_step_size_down;
+		torquetilt_interpolated -= torquetilt_step_size;
 	}
 	setpoint += torquetilt_interpolated;
 }
