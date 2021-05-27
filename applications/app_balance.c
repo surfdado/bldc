@@ -877,7 +877,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				if (last_abs_erpm < 500) {
 					// Increase softness when near stopping speed
-					ki_target = ki_target / 500 * last_abs_erpm;
+					//ki_target = ki_target / 500 * last_abs_erpm;
 				}
 
 				kp = kp * 0.997 + kp_target * 0.003;
