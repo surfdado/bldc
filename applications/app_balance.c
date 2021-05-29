@@ -87,6 +87,8 @@ typedef enum {
 #define TILTBACK_LOW_VOLTAGE_SLOW_MARGIN 2
 // Audible alert at 1 Volt above tiltback voltage
 #define HEADSUP_LOW_VOLTAGE_MARGIN 1
+// Softstart grace period
+#define SOFTSTART_GRACE_PERIOD_MS 100
 
 static int low_voltage_headsup_done = 0;
 
@@ -127,7 +129,7 @@ static int booster_beeping = 0;
 static SetpointAdjustmentType setpointAdjustmentType;
 static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportional, yaw_pid_value, yaw_setpoint;
 static systime_t current_time, last_time, diff_time;
-static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
+static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, softstart_timer;
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static RideState ride_state, new_ride_state;
@@ -218,11 +220,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		beep_off(1);
 	}
 
-	kp = kp_brk;
-	ki = ki_brk;
-	kd = kd_brk;
-
-	pid_value = 0;
+	kp = 1;
+	ki = 0;
+	kd = 100;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -280,6 +280,7 @@ void reset_vars(void){
 	kd = 100;
 	exp_g_max = 0;
 	exp_g_min = 0;
+	pid_value = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -392,9 +393,16 @@ bool check_faults(bool ignoreTimers){
 }
 
 void calculate_setpoint_target(void){
-	if(setpointAdjustmentType == CENTERING && setpoint_target_interpolated != setpoint_target){
-		// Ignore tiltback during centering sequence
-		state = RUNNING;
+	if(setpointAdjustmentType == CENTERING){
+		if (setpoint_target_interpolated != setpoint_target){
+			// Ignore tiltback during centering sequence
+			state = RUNNING;
+			softstart_timer = current_time;
+		}
+		else if (ST2MS(current_time - softstart_timer) > SOFTSTART_GRACE_PERIOD_MS){
+			// After a short delay transition to normal riding
+			setpointAdjustmentType = TILTBACK;
+		}
 	}else if(abs_duty_cycle > balance_conf.tiltback_duty){
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_angle;
@@ -846,8 +854,10 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				apply_torquetilt();
-				apply_turntilt();
+				if (setpointAdjustmentType != CENTERING) {
+					apply_torquetilt();
+					apply_turntilt();
+				}
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
@@ -875,17 +885,23 @@ static THD_FUNCTION(balance_thread, arg) {
 					ki_target = ki_acc;
 					kd_target = kd_acc;
 				}
-				if (last_abs_erpm < 500) {
-					// Increase softness when near stopping speed
-					//ki_target = ki_target / 500 * last_abs_erpm;
-				}
 
+				// Use filtering to avoid sudden changes in PID values
 				kp = kp * 0.997 + kp_target * 0.003;
 				ki = ki * 0.997 + ki_target * 0.003;
 				kd = kd * 0.997 + kd_target * 0.003;
 
-				pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
-				last_proportional = proportional;
+				if (setpointAdjustmentType == CENTERING) {
+					// soft-start
+					float pid_target = (kp * proportional) + (kd * derivative);
+					pid_value = 0.05 * pid_target + 0.95 * pid_value;
+					// once centering is done, start integral component from 0
+					integral = 0;
+					ki = 0;
+				}
+				else {
+					pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
+				}
 
 				expki = ki;
 				expsetpoint = setpoint;
