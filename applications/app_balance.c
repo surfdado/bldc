@@ -106,7 +106,7 @@ static volatile imu_config imu_conf;
 static float startup_step_size, tiltback_step_size, torquetilt_step_size, torquetilt_step_size_down, turntilt_step_size;
 
 // Runtime values read from elsewhere
-static float pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
+static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
 static float duty_cycle, abs_duty_cycle;
 static float erpm, abs_erpm, avg_erpm;
@@ -248,6 +248,7 @@ void reset_vars(void){
 	// Clear accumulated values.
 	integral = 0;
 	last_proportional = 0;
+	last_pitch_angle = 0;
 	yaw_integral = 0;
 	yaw_last_proportional = 0;
 	d_pt1_state = 0;
@@ -864,7 +865,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				proportional = setpoint - pitch_angle;
 				// Resume real PID maths
 				integral = integral + proportional;
-				derivative = proportional - last_proportional;
+
+				// Don't include setpoint adjustment in derivative (Courtesy of GrandmaB)
+				derivative = last_pitch_angle - pitch_angle;//proportional - last_proportional;
+				last_pitch_angle = pitch_angle;
+				last_proportional = proportional;
 
 				// Apply D term only filter
 				if(balance_conf.kd_pt1_frequency > 0){
