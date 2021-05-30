@@ -98,7 +98,7 @@ static THD_WORKING_AREA(balance_thread_wa, 2048); // 2kb stack for this thread
 
 static thread_t *app_thread;
 
-#define ACCHISTSIZE 50
+#define ACCHISTSIZE 30
 
 // Config values
 static volatile balance_config balance_conf;
@@ -122,7 +122,7 @@ static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float torquetilt_brk_start_current, torquetilt_brk_delay;
-static float torquetilt_filtered_current, torquetilt_target, torquetilt_interpolated;
+static float torquetilt_filtered_current, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
 static int booster_beep = 0;
 static int booster_beeping = 0;
@@ -156,12 +156,12 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 
-	// to avoid oscillations:
 	torquetilt_step_size_down = torquetilt_step_size;
-	if (balance_conf.torquetilt_speed > 2.5)
-		torquetilt_step_size_down /= 3;
-	else if (balance_conf.torquetilt_speed > 1.5)
+	// to avoid oscillations:
+	/*if (balance_conf.torquetilt_speed > 2.5)
 		torquetilt_step_size_down /= 2;
+	else if (balance_conf.torquetilt_speed > 1.5)
+	torquetilt_step_size_down /= 1.5;*/
 
 	float torquetilt_start_current = balance_conf.torquetilt_start_current;
 	int sc = (int) torquetilt_start_current;
@@ -256,7 +256,6 @@ void reset_vars(void){
 	setpoint = pitch_angle;
 	setpoint_target_interpolated = pitch_angle;
 	setpoint_target = 0;
-	torquetilt_target = 0;
 	torquetilt_interpolated = 0;
 	torquetilt_filtered_current = 0;
 	turntilt_target = 0;
@@ -534,12 +533,12 @@ void apply_torquetilt(void){
 		brake_mode = BRAKE_NORMAL;
 	}
 
-	// Wat is this line O_o
-	// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
-	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
-	// Finally multiply it by sign motor current to get directionality back
+	float torquetilt_target;
 	float torque_efficiency = expavg / torquetilt_filtered_current;
 	if (torque_efficiency < 1) { // magic ratio
+		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
+		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
+		// Finally multiply it by sign motor current to get directionality back
 		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
 	}
 	else {
