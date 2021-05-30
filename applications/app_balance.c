@@ -419,6 +419,7 @@ void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK;
 		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
+		beep_alert(3, 0);
 	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_low_voltage){
 		if (abs_erpm > TILTBACK_LOW_VOLTAGE_MIN_ERPM){
 			if(erpm > 0){
