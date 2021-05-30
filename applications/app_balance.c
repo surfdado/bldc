@@ -553,6 +553,19 @@ void apply_torquetilt(void){
 	exp_g_max = fmaxf(exp_grunt_factor, exp_g_max);
 	exp_g_min = fminf(exp_grunt_factor, exp_g_min);
 
+	// don't get the board too "excited", don't let the nose rise above 0 ;)
+	float max_boner = 0;//balance_conf.torquetilt_angle_limit / 3;
+	bool boner = ((fabsf(torquetilt_target) > 0) && (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target)));
+	float boner_size = fabsf(last_proportional - torquetilt_interpolated);
+
+	if (boner && (boner_size > max_boner)) {
+		torquetilt_target = torquetilt_target / 4;
+		expkp = 1;
+	}
+	else
+		expkp = 0;
+
+
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
 	}else if (torquetilt_target - torquetilt_interpolated > 0){
