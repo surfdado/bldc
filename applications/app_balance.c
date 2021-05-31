@@ -98,8 +98,6 @@ static THD_WORKING_AREA(balance_thread_wa, 2048); // 2kb stack for this thread
 
 static thread_t *app_thread;
 
-#define ACCHISTSIZE 30
-
 // Config values
 static volatile balance_config balance_conf;
 static volatile imu_config imu_conf;
@@ -135,12 +133,30 @@ static float max_temp_fet;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
-static float /*acceleration, */ erpm_avg, last_erpm;
-static int accidx;
+static float acceleration, last_erpm;
 
-float expacc, expaccmin, expaccmax, expavg;
-float expki, expkd, expkp, expprop, expsetpoint, ttt;
+float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
+
+float bq_z1, bq_z2;
+float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
+inline float biquad_filter(float in) {
+    float out = in * bq_a0 + bq_z1;
+    bq_z1 = in * bq_a1 + bq_z2 - bq_b1 * out;
+    bq_z2 = in * bq_a2 - bq_b2 * out;
+    return out;
+}
+void biquad_config(float Fc);
+void biquad_config(float Fc) {
+	float K = tanf(M_PI * Fc);	// -0.0159;
+	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float norm = 1 / (1 + K / Q + K * K);
+	bq_a0 = K * K * norm;
+	bq_a1 = 2 * bq_a0;
+	bq_a2 = bq_a0;
+	bq_b1 = 2 * (K * K - 1) * norm;
+	bq_b2 = (1 - K / Q + K * K) * norm;
+}
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
@@ -224,6 +240,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	ki = 0;
 	kd = 100;
 
+	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
+	// 20 works well for me, higher reduces delay but increase noise
+	float cutoff_freq = balance_conf.roll_steer_kp;
+	if (cutoff_freq < 3)
+		cutoff_freq = 3;
+	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
+
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
 	case SHUTDOWN_MODE_OFF_AFTER_1M: autosuspend_timeout = 60; break;
@@ -249,6 +272,7 @@ void reset_vars(void){
 	integral = 0;
 	last_proportional = 0;
 	last_pitch_angle = 0;
+	last_erpm = 0;
 	yaw_integral = 0;
 	yaw_last_proportional = 0;
 	d_pt1_state = 0;
@@ -268,12 +292,7 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
-	//acceleration = 0;
-	expaccmin = 10000.0;
-	expaccmax = 0.0;
-	expavg = 0.0;
-	accidx = 0;
-	erpm_avg = 0;
+
 	// minimum values (even 0,0,0 is possible) for soft start:
 	kp = 1;
 	ki = 0;
@@ -281,6 +300,9 @@ void reset_vars(void){
 	exp_g_max = 0;
 	exp_g_min = 0;
 	pid_value = 0;
+	// biquad filter for acceleration:
+	bq_z1 = 0;
+	bq_z2 = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -534,8 +556,8 @@ void apply_torquetilt(void){
 	}
 
 	float torquetilt_target;
-	float torque_efficiency = expavg / torquetilt_filtered_current;
-	if (torque_efficiency < 1) { // magic ratio
+	float torque_efficiency = (acceleration * 50.0) / torquetilt_filtered_current;
+	if (torque_efficiency < 1.5) { // magic ratio
 		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 		// Finally multiply it by sign motor current to get directionality back
@@ -546,10 +568,10 @@ void apply_torquetilt(void){
 		torquetilt_target = 0;
 	}
 	ttt = torquetilt_target;
-	float accel = expavg;
+	float accel = acceleration;
 	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
 		accel = SIGN(torquetilt_filtered_current) * 0.1;
-	exp_grunt_factor = fmaxf(fminf(torquetilt_filtered_current / accel, 20), -20);
+	exp_grunt_factor = fmaxf(fminf(torquetilt_filtered_current / (accel * 50.0), 20), -20);
 	exp_g_max = fmaxf(exp_grunt_factor, exp_g_max);
 	exp_g_min = fminf(exp_grunt_factor, exp_g_min);
 
@@ -738,18 +760,11 @@ static THD_FUNCTION(balance_thread, arg) {
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
 
-		accidx++;
-		erpm_avg += erpm;
-		if (accidx == ACCHISTSIZE) {
-			float new_erpm = erpm_avg / ACCHISTSIZE;
-			float acceleration = new_erpm - last_erpm;
-			last_erpm = new_erpm;
-			accidx = 0;
-			erpm_avg = 0;
-			expavg = expavg * 0.9 + acceleration * 0.1;
-		}
+		acceleration = biquad_filter(erpm - last_erpm);
+		last_erpm = erpm;
 
-		//expacc = acceleration;
+		// For logging only:
+		expacc = acceleration;
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
