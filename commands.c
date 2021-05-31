@@ -400,11 +400,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			//expaccmin = 100;
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, expacc, 1e4, &ind);
+			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
 			//expaccmax = -100;
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, -1, 1e4, &ind);
+			buffer_append_float32(send_buffer, expacc, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
 			buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);

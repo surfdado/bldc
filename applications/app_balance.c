@@ -137,7 +137,7 @@ static float max_temp_fet;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
-static float acceleration, last_erpm;
+static float acceleration, acceleration2, last_erpm;
 static bool integral_windup_detected;
 
 
@@ -162,6 +162,26 @@ void biquad_config(float Fc) {
 	bq_a2 = bq_a0;
 	bq_b1 = 2 * (K * K - 1) * norm;
 	bq_b2 = (1 - K / Q + K * K) * norm;
+}
+
+float bq2_z1, bq2_z2;
+float bq2_a0, bq2_a1, bq2_a2, bq2_b1, bq2_b2;
+inline float biquad2_filter(float in) {
+    float out = in * bq2_a0 + bq2_z1;
+    bq2_z1 = in * bq2_a1 + bq2_z2 - bq2_b1 * out;
+    bq2_z2 = in * bq2_a2 - bq2_b2 * out;
+    return out;
+}
+void biquad2_config(float Fc);
+void biquad2_config(float Fc) {
+	float K = tanf(M_PI * Fc);	// -0.0159;
+	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float norm = 1 / (1 + K / Q + K * K);
+	bq2_a0 = K * K * norm;
+	bq2_a1 = 2 * bq2_a0;
+	bq2_a2 = bq2_a0;
+	bq2_b1 = 2 * (K * K - 1) * norm;
+	bq2_b2 = (1 - K / Q + K * K) * norm;
 }
 
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
@@ -252,6 +272,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (cutoff_freq < 3)
 		cutoff_freq = 3;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
+	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -311,6 +332,8 @@ void reset_vars(void){
 	// biquad filter for acceleration:
 	bq_z1 = 0;
 	bq_z2 = 0;
+	bq2_z1 = 0;
+	bq2_z2 = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -790,10 +813,13 @@ static THD_FUNCTION(balance_thread, arg) {
 		sampleIdx = 0;*/
 
 		acceleration = biquad_filter(erpm - last_erpm);
+		acceleration2 = biquad2_filter(acc[0]);
 		last_erpm = erpm;
 
 		// For logging only:
 		expacc = acceleration;
+		expki = integral;
+		expkd = acceleration2;
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
