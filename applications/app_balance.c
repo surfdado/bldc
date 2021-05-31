@@ -618,6 +618,11 @@ void apply_torquetilt(void){
 	else
 		expkp = 0;
 
+	if (((torquetilt_target == 0) && (fabsf(integral) > 3000) && (torquetilt_filtered_current < start_current))) {
+		// we are back to 0 ttt, current is small, yet integral windup is high:
+		// resort to brute force integral windup mitigation, shed 1% each cycle:
+		integral = integral * 0.99;
+	}
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
 		torquetilt_interpolated = torquetilt_target;
@@ -625,14 +630,6 @@ void apply_torquetilt(void){
 		torquetilt_interpolated += torquetilt_step_size_down;
 	}else{
 		torquetilt_interpolated -= torquetilt_step_size;
-	}
-	if (fabsf(torquetilt_interpolated) > balance_conf.torquetilt_angle_limit / 2) {
-		integral_windup_detected = true;
-	}
-	if ((torquetilt_interpolated == 0) && integral_windup_detected) {
-		integral = integral / 2;
-		integral_windup_detected = false;
-		beep_alert(1, 0);
 	}
 	setpoint += torquetilt_interpolated;
 }
