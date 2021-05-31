@@ -134,6 +134,8 @@ static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
 static float acceleration, last_erpm;
+static bool integral_windup_detected;
+
 
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
@@ -292,6 +294,7 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
+	integral_windup_detected = false;
 
 	// minimum values (even 0,0,0 is possible) for soft start:
 	kp = 1;
@@ -594,6 +597,14 @@ void apply_torquetilt(void){
 		torquetilt_interpolated += torquetilt_step_size_down;
 	}else{
 		torquetilt_interpolated -= torquetilt_step_size;
+	}
+	if (fabsf(torquetilt_interpolated) > balance_conf.torquetilt_angle_limit / 2) {
+		integral_windup_detected = true;
+	}
+	if ((torquetilt_interpolated == 0) && integral_windup_detected) {
+		integral = integral / 2;
+		integral_windup_detected = false;
+		beep_alert(1, 0);
 	}
 	setpoint += torquetilt_interpolated;
 }
