@@ -904,7 +904,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
-				float last_abs_erpm = fabsf(last_erpm);
+				// Switch between breaking PIDs and acceleration PIDs
 				float kp_target, ki_target, kd_target;
 				if (SIGN(proportional) != SIGN(erpm)) {
 					// braking
@@ -936,10 +936,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
 				}
 
-				expki = ki;
 				expsetpoint = setpoint;
-				/*
-				expprop = proportional;
+
 				// Apply Booster
 				int booster_pid;
 				abs_proportional = fabsf(proportional);
@@ -960,38 +958,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					booster_pid = 0;
 				}
-				pid_value += booster_pid;*/
+				pid_value += booster_pid;
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
-
-				update_beep_alert();
-
-				/*if (abs_erpm > balance_conf.fault_adc_half_erpm) {
-					// we're at riding speed => turn on the forward facing lights
-					if (pid_value > -4) {
-						if (erpm > 0) {
-							new_ride_state = RIDE_FORWARD;
-						}
-						else {
-							new_ride_state = RIDE_REVERSE;
-						}
-					}
-					else {
-						if (erpm > 0) {
-							new_ride_state = BRAKE_FORWARD;
-						}
-						else {
-							new_ride_state = BRAKE_REVERSE;
-						}
-					}
-				}
-				else {
-					new_ride_state = RIDE_IDLE;
-				}
-				if (new_ride_state != ride_state){
-					update_lights();
-					}*/
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
@@ -1048,6 +1018,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				brake();
 				break;
 		}
+		update_beep_alert();
 
 		// Delay between loops
 		chThdSleepMicroseconds((int)((1000.0 / balance_conf.hertz) * 1000.0));

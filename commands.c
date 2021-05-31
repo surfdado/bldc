@@ -368,14 +368,14 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32(send_buffer, exp_grunt_factor/*mc_interface_read_reset_avg_input_current()*/, 1e2, &ind);
+			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, exp_g_min, 1e2, &ind);
+			buffer_append_float32(send_buffer, exp_grunt_factor, 1e2, &ind);
 			exp_g_min = 0;
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, exp_g_max, 1e2, &ind);
+			buffer_append_float32(send_buffer, -1, 1e2, &ind);
 			exp_g_max = 0;
 		}
 		if (mask & ((uint32_t)1 << 6)) {
@@ -392,12 +392,14 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 		if (mask & ((uint32_t)1 << 10)) {
 			buffer_append_float32(send_buffer, expki, 1e4, &ind);
+			//expaccmin = 100;
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
+			buffer_append_float32(send_buffer, expacc, 1e4, &ind);
+			//expaccmax = -100;
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, expavg, 1e4, &ind);
+			buffer_append_float32(send_buffer, -1, 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
 			buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
