@@ -82,6 +82,10 @@ static bool isInitialized = false;
 extern float expacc, expavg, expaccmin, expaccmax, expki, expkd, expkp, expprop, expsetpoint, ttt;
 extern float exp_grunt_factor, exp_g_max, exp_g_min;
 
+//extern float OneKSamples1[100];
+//extern float OneKSamples2[100];
+//static int sampleIdx = 0;
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&send_buffer_mutex);
@@ -365,10 +369,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, expsetpoint, 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 2)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
+			buffer_append_float32(send_buffer, /*OneKSamples1[sampleIdx]*/ mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
+			buffer_append_float32(send_buffer, /*OneKSamples2[sampleIdx]*/ mc_interface_read_reset_avg_input_current(), 1e2, &ind);
+			//sampleIdx++; if (sampleIdx >= 100) sampleIdx = 0;
 		}
 		if (mask & ((uint32_t)1 << 4)) {
 			buffer_append_float32(send_buffer, exp_grunt_factor, 1e2, &ind);

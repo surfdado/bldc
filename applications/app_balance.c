@@ -81,6 +81,10 @@ typedef enum {
 	BRAKE_REVERSE
 } RideState;
 
+//float OneKSamples1[100];
+//float OneKSamples2[100];
+//static int sampleIdx;
+
 // Allow me to go 10km/h even below low voltage
 #define TILTBACK_LOW_VOLTAGE_MIN_ERPM 3000
 // Give me another 2 Volts of margin at low speeds before doing tiltback there too
@@ -271,6 +275,7 @@ void app_balance_start(void) {
 
 void reset_vars(void){
 	// Clear accumulated values.
+	//sampleIdx = 0;
 	integral = 0;
 	last_proportional = 0;
 	last_pitch_angle = 0;
@@ -770,6 +775,19 @@ static THD_FUNCTION(balance_thread, arg) {
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
+
+		//if (sampleIdx == 0) {
+		//	OneKSamples1[0] = 999.999;
+		//	OneKSamples2[0] = 999.999;
+		//	sampleIdx++;
+		//}
+		float acc[3];
+		imu_get_accel(acc);
+		/*OneKSamples1[sampleIdx] = motor_current;
+		OneKSamples2[sampleIdx] = acc[0];
+		sampleIdx++;
+		if (sampleIdx == 100)
+		sampleIdx = 0;*/
 
 		acceleration = biquad_filter(erpm - last_erpm);
 		last_erpm = erpm;
