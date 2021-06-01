@@ -606,21 +606,23 @@ void apply_torquetilt(void){
 	exp_g_max = fmaxf(exp_grunt_factor, exp_g_max);
 	exp_g_min = fminf(exp_grunt_factor, exp_g_min);
 
-	// don't get the board too "excited", don't let the nose rise above 0 ;)
-	float max_boner = 0;//balance_conf.torquetilt_angle_limit / 3;
-	bool boner = ((fabsf(torquetilt_target) > 0) && (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target)));
-	float boner_size = fabsf(last_proportional - torquetilt_interpolated);
+	// don't get the board too "excited", don't let the nose rise much above 0 ;)
+	float max_tilt = 0;//balance_conf.torquetilt_angle_limit / 4;
+	bool nose_is_up = (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target));
+	float actual_tilt = fabsf(last_proportional - torquetilt_interpolated);
 
-	if (boner && (boner_size > max_boner)) {
+	if (nose_is_up && (fabsf(torquetilt_target) > 0) && (actual_tilt > max_tilt)) {
 		torquetilt_target = torquetilt_target / 4;
 		expkp = 1;
 	}
 	else
-		expkp = 0;
+	expkp = 0;
 
-	if (((torquetilt_target == 0) && (fabsf(integral) > 3000) && (torquetilt_filtered_current < start_current))) {
+	if ((torquetilt_target == 0)  && (fabsf(integral) > 3000) && (abs_erpm < 2000) &&
+		 (torquetilt_filtered_current < start_current)) {
 		// we are back to 0 ttt, current is small, yet integral windup is high:
 		// resort to brute force integral windup mitigation, shed 1% each cycle:
+		// but only at low speeds (below 4mph)
 		integral = integral * 0.99;
 	}
 
