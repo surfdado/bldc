@@ -363,7 +363,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 		if (mask & ((uint32_t)1 << 0)) {
-			buffer_append_float16(send_buffer, ttt, 1e1, &ind);
+			buffer_append_float16(send_buffer, mc_interface_temp_fet_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 1)) {
 			buffer_append_float16(send_buffer, expsetpoint, 1e1, &ind);
@@ -380,7 +380,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			exp_g_min = 0;
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, -1, 1e2, &ind);
+			buffer_append_float32(send_buffer, ttt, 1e2, &ind);
 			exp_g_max = 0;
 		}
 		if (mask & ((uint32_t)1 << 6)) {
