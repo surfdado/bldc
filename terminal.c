@@ -528,6 +528,16 @@ void terminal_process_string(char *str) {
 	} else if (strcmp(argv[0], "foc_state") == 0) {
 		mcpwm_foc_print_state();
 		commands_printf(" ");
+	} else if (strcmp(argv[0], "foc_dc_cal") == 0) {
+		commands_printf("Performing DC offset calibration...");
+		int res = mcpwm_foc_dc_cal(true);
+		if (res >= 0) {
+			conf_general_store_mc_configuration((mc_configuration*)mc_interface_get_configuration(),
+					mc_interface_get_motor_thread() == 2);
+			commands_printf("Done!\n");
+		} else {
+			commands_printf("DC Cal Failed: %d\n", res);
+		}
 	} else if (strcmp(argv[0], "hw_status") == 0) {
 		commands_printf("Firmware: %d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR);
 #ifdef HW_NAME
@@ -550,7 +560,23 @@ void terminal_process_string(char *str) {
 				mc_interface_get_motor_thread() == 2);
 
 		commands_printf("FOC Current Offsets: %.2f %.2f %.2f",
-						(double)curr0_offset, (double)curr1_offset, (double)curr2_offset);
+				(double)curr0_offset, (double)curr1_offset, (double)curr2_offset);
+
+		float v0_offset;
+		float v1_offset;
+		float v2_offset;
+
+		mcpwm_foc_get_voltage_offsets(&v0_offset, &v1_offset, &v2_offset,
+				mc_interface_get_motor_thread() == 2);
+
+		commands_printf("FOC Voltage Offsets: %.4f %.4f %.4f",
+				(double)v0_offset, (double)v1_offset, (double)v2_offset);
+
+		mcpwm_foc_get_voltage_offsets_undriven(&v0_offset, &v1_offset, &v2_offset,
+				mc_interface_get_motor_thread() == 2);
+
+		commands_printf("FOC Voltage Offsets Undriven: %.4f %.4f %.4f",
+				(double)v0_offset, (double)v1_offset, (double)v2_offset);
 
 #ifdef COMM_USE_USB
 		commands_printf("USB config events: %d", comm_usb_serial_configured_cnt());
@@ -1140,6 +1166,9 @@ void terminal_process_string(char *str) {
 
 		commands_printf("foc_state");
 		commands_printf("  Print some FOC state variables.");
+
+		commands_printf("foc_dc_cal");
+		commands_printf("  Calibrate current and voltage DC offsets.");
 
 		commands_printf("hw_status");
 		commands_printf("  Print some hardware status information.");
