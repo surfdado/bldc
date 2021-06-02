@@ -142,6 +142,8 @@ static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
 static float acceleration, acceleration2, last_erpm;
+static float integral_max, integral_min;
+
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
 
@@ -279,6 +281,16 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		cutoff_freq = 3;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
 	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
+
+	// Limit integral buildup, hard coded for now
+	if (REVERSE_ERPM_REPORTING == 1) {
+		integral_max = 20000.0; // acceleration
+		integral_min = -10000.0; // braking
+	}
+	else {
+		integral_max = 10000.0;	// braking
+		integral_min = -20000.0; // acceleration
+	}
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -988,8 +1000,11 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
-				// Resume real PID maths
 				integral = integral + proportional;
+
+				// Limit integral
+				integral = fminf(integral, integral_max);
+				integral = fmaxf(integral, integral_min);
 
 				// Don't include setpoint adjustment in derivative (Courtesy of GrandmaB)
 				derivative = last_pitch_angle - pitch_angle;//proportional - last_proportional;
