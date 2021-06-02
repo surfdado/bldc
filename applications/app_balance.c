@@ -134,6 +134,7 @@ static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, softstart_timer;
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
+static bool use_soft_start;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
@@ -194,6 +195,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
+	use_soft_start = (balance_conf.startup_speed < 10);
 
 	torquetilt_step_size_down = torquetilt_step_size;
 	// to avoid oscillations:
@@ -259,10 +261,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		beep_off(1);
 	}
 
-	kp = 1;
-	ki = 0;
-	kd = 100;
-
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
 	// 20 works well for me, higher reduces delay but increase noise
 	float cutoff_freq = balance_conf.roll_steer_kp;
@@ -318,10 +316,20 @@ void reset_vars(void){
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
 
-	// minimum values (even 0,0,0 is possible) for soft start:
-	kp = 1;
-	ki = 0;
-	kd = 100;
+	if (use_soft_start) {
+		// Soft start
+		// minimum values (even 0,0,0 is possible) for soft start:
+		kp = 1;
+		ki = 0;
+		kd = 100;
+	}
+	else {
+		// Normal start / quick-start
+		kp = kp_acc / 2;
+		ki = ki_acc / 2;
+		kd = kd_acc / 2;
+	}
+
 	exp_g_max = 0;
 	exp_g_min = 0;
 	pid_value = 0;
@@ -447,6 +455,10 @@ void calculate_setpoint_target(void){
 			// Ignore tiltback during centering sequence
 			state = RUNNING;
 			softstart_timer = current_time;
+
+			// disable soft start if startup speed is 10 or greater
+			if (use_soft_start == false)
+				setpointAdjustmentType = TILTBACK;
 		}
 		else if (ST2MS(current_time - softstart_timer) > SOFTSTART_GRACE_PERIOD_MS){
 			// After a short delay transition to normal riding
@@ -962,7 +974,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				ki = ki * 0.997 + ki_target * 0.003;
 				kd = kd * 0.997 + kd_target * 0.003;
 
-				if (setpointAdjustmentType == CENTERING) {
+				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
 					float pid_target = (kp * proportional) + (kd * derivative);
 					pid_value = 0.05 * pid_target + 0.95 * pid_value;
