@@ -1004,7 +1004,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Switch between breaking PIDs and acceleration PIDs
 				float kp_target, ki_target, kd_target;
-				if (SIGN(proportional) != SIGN(erpm)) {
+				if (SIGN(pid_value) == SIGN(REVERSE_ERPM_REPORTING * erpm)) {
 					// braking
 					kp_target = kp_brk;
 					ki_target = ki_brk;
