@@ -594,7 +594,10 @@ void calculate_setpoint_interpolated(void){
 		}else if (setpoint_target - setpoint_target_interpolated > 0){
 			setpoint_target_interpolated += get_setpoint_adjustment_step_size();
 		}else{
-			setpoint_target_interpolated -= get_setpoint_adjustment_step_size() / 3;
+			if (setpointAdjustmentType == TILTBACK)
+				setpoint_target_interpolated -= get_setpoint_adjustment_step_size() / 3;
+			else
+				setpoint_target_interpolated -= get_setpoint_adjustment_step_size();
 		}
 	}
 }
