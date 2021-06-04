@@ -63,7 +63,8 @@ typedef enum {
 
 typedef enum {
 	CENTERING = 0,
-	TILTBACK
+	TILTBACK,
+	REVERSESTOP
 } SetpointAdjustmentType;
 
 typedef enum {
@@ -135,6 +136,8 @@ static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_t
 static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static bool use_soft_start;
+static bool use_reverse_stop;
+static float reverse_total_erpm;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
@@ -196,6 +199,14 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	use_soft_start = (balance_conf.startup_speed < 10);
+
+	float startup_speed = balance_conf.startup_speed;
+	int ss = (int) startup_speed;
+	float ss_rest = startup_speed - ss;
+	if ((ss_rest > 0.09) && (ss_rest < 0.11))
+		use_reverse_stop = true;
+	else
+		use_reverse_stop = false;
 
 	torquetilt_step_size_down = torquetilt_step_size;
 	// to avoid oscillations:
@@ -375,6 +386,8 @@ float get_setpoint_adjustment_step_size(void){
 	switch(setpointAdjustmentType){
 		case (CENTERING):
 			return startup_step_size;
+		case (REVERSESTOP):
+			return tiltback_step_size * 20;
 		case (TILTBACK):
 			return tiltback_step_size;
 	}
@@ -404,6 +417,13 @@ bool check_faults(bool ignoreTimers){
 		}
 	} else {
 		fault_switch_timer = current_time;
+	}
+
+	if(setpointAdjustmentType == REVERSESTOP){
+		if (fabsf(pitch_angle) > 15) {
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
 	}
 
 	// Switch partially open and stopped
@@ -464,7 +484,27 @@ void calculate_setpoint_target(void){
 			// After a short delay transition to normal riding
 			setpointAdjustmentType = TILTBACK;
 		}
-	}else if(abs_duty_cycle > balance_conf.tiltback_duty){
+	}
+	else if (setpointAdjustmentType == REVERSESTOP) {
+		// accumalete erpms:
+		reverse_total_erpm += erpm;
+		float reverse_tolerance = 50000;
+		if (fabsf(reverse_total_erpm) > reverse_tolerance) {
+			// tilt down by 10 degrees after 50k aggregate erpm
+			setpoint_target = 10 * REVERSE_ERPM_REPORTING * (fabsf(reverse_total_erpm)-reverse_tolerance) / 50000;
+		}
+		else {
+			if (fabsf(reverse_total_erpm) <= reverse_tolerance/2) {
+				if (REVERSE_ERPM_REPORTING * erpm >= 0){
+					setpointAdjustmentType = TILTBACK;
+					reverse_total_erpm = 0;
+					setpoint_target = 0;
+					integral = 0;
+				}
+			}
+		}
+	}
+	else if(abs_duty_cycle > balance_conf.tiltback_duty){
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_angle;
 		} else {
@@ -505,6 +545,11 @@ void calculate_setpoint_target(void){
 		}
 	}else{
 		// Normal running
+		if (use_reverse_stop && (REVERSE_ERPM_REPORTING * erpm < 0)) {
+			setpointAdjustmentType = REVERSESTOP;
+			reverse_total_erpm = 0;
+		}
+		else
 		if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
 			// Nose angle adjustment
 			if(erpm > 0){
@@ -933,7 +978,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if (setpointAdjustmentType != CENTERING) {
+				if (setpointAdjustmentType == TILTBACK) {
 					apply_torquetilt();
 					apply_turntilt();
 				}
@@ -968,6 +1013,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					ki_target = ki_acc;
 					kd_target = kd_acc;
 				}
+				if (setpointAdjustmentType == REVERSESTOP) {
+					kp_target = 2;
+					integral = 0;
+				}
 
 				// Use filtering to avoid sudden changes in PID values
 				kp = kp * 0.997 + kp_target * 0.003;
@@ -989,26 +1038,32 @@ static THD_FUNCTION(balance_thread, arg) {
 				expsetpoint = setpoint;
 
 				// Apply Booster
-				int booster_pid;
-				abs_proportional = fabsf(proportional);
-				if(abs_proportional > balance_conf.booster_angle){
-					if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
-						booster_pid = balance_conf.booster_current * SIGN(proportional) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
-					}else{
-						booster_pid = balance_conf.booster_current * SIGN(proportional);
+				if (setpointAdjustmentType == TILTBACK) {
+					int booster_pid;
+					abs_proportional = fabsf(proportional);
+					if(abs_proportional > balance_conf.booster_angle){
+						if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
+							booster_pid = balance_conf.booster_current * SIGN(proportional) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
+						}else{
+							booster_pid = balance_conf.booster_current * SIGN(proportional);
+						}
+						if (booster_beep && !booster_beeping) {
+							beep_alert(1, 0);
+							booster_beeping = 1;
+						}
 					}
-					if (booster_beep && !booster_beeping) {
-						beep_alert(1, 0);
-						booster_beeping = 1;
+					else {
+						if (booster_beeping) {
+							booster_beeping = 0;
+						}
+						booster_pid = 0;
 					}
+					pid_value += booster_pid;
 				}
-				else {
-					if (booster_beeping) {
-						booster_beeping = 0;
-					}
-					booster_pid = 0;
+				else if(setpointAdjustmentType == REVERSESTOP){
+					if (REVERSE_ERPM_REPORTING * pid_value > 0)
+					{}//pid_value = 0;
 				}
-				pid_value += booster_pid;
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
