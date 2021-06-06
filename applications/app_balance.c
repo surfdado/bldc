@@ -147,16 +147,15 @@ static float integral_max, integral_min;
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
 
-float bq_z1, bq_z2;
-float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
-inline float biquad_filter(float in) {
+static float bq_z1, bq_z2;
+static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
+static inline float biquad_filter(float in) {
     float out = in * bq_a0 + bq_z1;
     bq_z1 = in * bq_a1 + bq_z2 - bq_b1 * out;
     bq_z2 = in * bq_a2 - bq_b2 * out;
     return out;
 }
-void biquad_config(float Fc);
-void biquad_config(float Fc) {
+static void biquad_config(float Fc) {
 	float K = tanf(M_PI * Fc);	// -0.0159;
 	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
 	float norm = 1 / (1 + K / Q + K * K);
@@ -167,9 +166,9 @@ void biquad_config(float Fc) {
 	bq_b2 = (1 - K / Q + K * K) * norm;
 }
 
-float bq2_z1, bq2_z2;
-float bq2_a0, bq2_a1, bq2_a2, bq2_b1, bq2_b2;
-inline float biquad2_filter(float in) {
+static float bq2_z1, bq2_z2;
+static float bq2_a0, bq2_a1, bq2_a2, bq2_b1, bq2_b2;
+static inline float biquad2_filter(float in) {
     float out = in * bq2_a0 + bq2_z1;
     bq2_z1 = in * bq2_a1 + bq2_z2 - bq2_b1 * out;
     bq2_z2 = in * bq2_a2 - bq2_b2 * out;
@@ -880,13 +879,13 @@ static THD_FUNCTION(balance_thread, arg) {
 		sampleIdx = 0;*/
 
 		acceleration = biquad_filter(erpm - last_erpm);
-		acceleration2 = biquad2_filter(acc[0]);
+		//acceleration2 = biquad2_filter(acc[0]);
 		last_erpm = erpm;
 
 		// For logging only:
 		expacc = acceleration;
 		expki = integral;
-		expkd = acceleration2;
+		//expkd = acceleration2;
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
