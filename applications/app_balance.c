@@ -137,6 +137,7 @@ static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static bool use_soft_start;
 static bool use_reverse_stop;
+static bool disable_all_5_3_features;
 static float reverse_total_erpm;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
@@ -291,6 +292,12 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		integral_min = -20000.0; // acceleration
 	}
 
+	disable_all_5_3_features = (balance_conf.deadzone != 0);
+	if (disable_all_5_3_features) {
+		use_soft_start = false;
+		use_reverse_stop = false;
+	}
+
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
 	case SHUTDOWN_MODE_OFF_AFTER_1M: autosuspend_timeout = 60; break;
@@ -338,18 +345,25 @@ void reset_vars(void){
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
 
-	if (use_soft_start) {
-		// Soft start
-		// minimum values (even 0,0,0 is possible) for soft start:
-		kp = 1;
-		ki = 0;
-		kd = 100;
+	if (disable_all_5_3_features) {
+		kp = kp_acc;
+		ki = ki_acc;
+		kd = kd_acc;
 	}
 	else {
-		// Normal start / quick-start
-		kp = kp_acc / 2;
-		ki = ki_acc / 2;
-		kd = kd_acc / 2;
+		if (use_soft_start) {
+			// Soft start
+			// minimum values (even 0,0,0 is possible) for soft start:
+			kp = 1;
+			ki = 0;
+			kd = 100;
+		}
+		else {
+			// Normal start / quick-start
+			kp = kp_acc / 2;
+			ki = ki_acc / 2;
+			kd = kd_acc / 2;
+		}
 	}
 
 	exp_g_max = 0;
@@ -1004,18 +1018,17 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if (setpointAdjustmentType == TILTBACK) {
-					apply_torquetilt();
-					apply_turntilt();
+				if (disable_all_5_3_features == false) {
+					if (setpointAdjustmentType == TILTBACK) {
+						apply_torquetilt();
+						apply_turntilt();
+					}
 				}
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
 				integral = integral + proportional;
 
-				// Limit integral
-				integral = fminf(integral, integral_max);
-				integral = fmaxf(integral, integral_min);
 
 				// Don't include setpoint adjustment in derivative (Courtesy of GrandmaB)
 				derivative = last_pitch_angle - pitch_angle;//proportional - last_proportional;
@@ -1028,29 +1041,35 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
-				// Switch between breaking PIDs and acceleration PIDs
-				float kp_target, ki_target, kd_target;
-				if (SIGN(pid_value) == SIGN(REVERSE_ERPM_REPORTING * erpm)) {
-					// braking
-					kp_target = kp_brk;
-					ki_target = ki_brk;
-					kd_target = kd_brk;
-				}
-				else {
-					// acceleration
-					kp_target = kp_acc;
-					ki_target = ki_acc;
-					kd_target = kd_acc;
-				}
-				if (setpointAdjustmentType == REVERSESTOP) {
-					kp_target = 2;
-					integral = 0;
-				}
+				if (disable_all_5_3_features == false) {
+					// Limit integral
+					integral = fminf(integral, integral_max);
+					integral = fmaxf(integral, integral_min);
 
-				// Use filtering to avoid sudden changes in PID values
-				kp = kp * 0.997 + kp_target * 0.003;
-				ki = ki * 0.997 + ki_target * 0.003;
-				kd = kd * 0.997 + kd_target * 0.003;
+					// Switch between breaking PIDs and acceleration PIDs
+					float kp_target, ki_target, kd_target;
+					if (SIGN(pid_value) == SIGN(REVERSE_ERPM_REPORTING * erpm)) {
+						// braking
+						kp_target = kp_brk;
+						ki_target = ki_brk;
+						kd_target = kd_brk;
+					}
+					else {
+						// acceleration
+						kp_target = kp_acc;
+						ki_target = ki_acc;
+						kd_target = kd_acc;
+					}
+					if (setpointAdjustmentType == REVERSESTOP) {
+						kp_target = 2;
+						integral = 0;
+					}
+
+					// Use filtering to avoid sudden changes in PID values
+					kp = kp * 0.997 + kp_target * 0.003;
+					ki = ki * 0.997 + ki_target * 0.003;
+					kd = kd * 0.997 + kd_target * 0.003;
+				}
 
 				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
