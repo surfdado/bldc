@@ -106,7 +106,7 @@ static thread_t *app_thread;
 // Config values
 static volatile balance_config balance_conf;
 static volatile imu_config imu_conf;
-static float startup_step_size, tiltback_step_size, torquetilt_step_size, torquetilt_step_size_down, turntilt_step_size;
+static float startup_step_size, tiltback_step_size, torquetilt_step_size, torquetilt_step_size_down, turntilt_step_size, reverse_stop_step_size;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -199,6 +199,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
 	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
+	reverse_stop_step_size = /*balance_conf.revstop_distance*/100 / balance_conf.hertz;
 	use_soft_start = (balance_conf.startup_speed < 10);
 
 	float startup_speed = balance_conf.startup_speed;
@@ -398,7 +399,7 @@ float get_setpoint_adjustment_step_size(void){
 		case (CENTERING):
 			return startup_step_size;
 		case (REVERSESTOP):
-			return tiltback_step_size * 20;
+			return reverse_stop_step_size;
 		case (TILTBACK):
 			return tiltback_step_size;
 	}
@@ -1088,10 +1089,6 @@ static THD_FUNCTION(balance_thread, arg) {
 						booster_pid = 0;
 					}
 					pid_value += booster_pid;
-				}
-				else if(setpointAdjustmentType == REVERSESTOP){
-					if (REVERSE_ERPM_REPORTING * pid_value > 0)
-					{}//pid_value = 0;
 				}
 
 				// Output to motor
