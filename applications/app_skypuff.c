@@ -258,42 +258,12 @@ static void set_example_config(void)
 // threads here and set up callbacks.
 void app_custom_start(void)
 {
-	mc_conf = mc_interface_get_configuration();
-
-	set_example_config();
-
-	state = UNINITIALIZED;
-
-	stop_now = false;
-
-	chThdCreateStatic(my_thread_wa, sizeof(my_thread_wa), NORMALPRIO, my_thread, NULL);
-
-	// Terminal commands for the VESC Tool terminal can be registered.
-	terminal_register_command_callback(
-		"move_tac",
-		"Move zero point on specified distance. Use negative value to move backward.",
-		"[meters]", terminal_move_tac);
-	terminal_register_command_callback(
-		"skypuff",
-		"Print SkyPUFF configuration here.",
-		"", terminal_show_skypuff_conf);
-
-	commands_printf("app_skypuff started");
 }
 
 // Called when the custom application is stopped. Stop our threads
 // and release callbacks.
 void app_custom_stop(void)
 {
-	terminal_unregister_callback(terminal_move_tac);
-	terminal_unregister_callback(terminal_show_skypuff_conf);
-
-	stop_now = true;
-	while (is_running)
-	{
-		chThdSleepMilliseconds(1);
-	}
-	commands_printf("app_skypuff stopped");
 }
 
 void app_custom_configure(app_configuration *conf)
@@ -358,225 +328,11 @@ static THD_FUNCTION(my_thread, arg)
 	(void)arg;
 
 	chRegSetThreadName("App SkyPUFF");
-
-	is_running = true;
-
-	int cur_tac, abs_tac;
-	float cur_erpm, abs_erpm;
-	float cur_current, abs_current;
-
-	for (i = 0;; i++)
-	{
-		// Check if it is time to stop.
-		if (stop_now)
-		{
-			is_running = false;
-			return;
-		}
-
-		cur_tac = mc_interface_get_tachometer_value(false);
-		abs_tac = abs(cur_tac);
-
-		switch (state)
-		{
-		case UNINITIALIZED:
-			if (abs_tac < config.braking_length)
-				brake(cur_tac);
-			else
-				unwinding(cur_tac);
-			break;
-		case BRAKING:
-			// We are in the breaking zone?
-			if (abs_tac <= config.braking_length)
-			{
-				// Timeout thread will remove breaking every second by default
-				// Apply break current again on position changed
-				if (abs_tac != prev_abs_tac)
-					brake(cur_tac);
-			}
-			else
-				unwinding(cur_tac);
-
-			print_position_periodically(cur_tac, long_print_delay);
-			break;
-		case UNWINDING:
-			// No timeouts for unwinding state
-			if (!(i % 500))
-				timeout_reset();
-
-			// Go breaking or slowing?
-			if (brake_or_slowing(cur_tac, abs_tac))
-				break;
-
-			// Use prev_abs_tac as max tachometer
-			if (abs_tac > prev_abs_tac)
-			{
-				// Print debug message if we are going out from slowing zone
-				int eof_slowing = config.braking_length + config.slowing_length;
-				if (prev_abs_tac < eof_slowing && abs_tac >= eof_slowing)
-				{
-					commands_printf("Skypuff: unwinded from slowing zone %.2f meters (%d steps)",
-									(double)tac_steps_to_meters(cur_tac), cur_tac);
-				}
-
-				// Update maximum value of tachometer
-				prev_abs_tac = abs_tac;
-			}
-
-			// Going back more then config.rewinding_trigger_length?
-			if (abs_tac < prev_abs_tac - config.rewinding_trigger_lenght)
-			{
-				rewinding(cur_tac);
-				break;
-			}
-
-			print_position_periodically(cur_tac, long_print_delay);
-			break;
-		case REWINDING:
-			// No timeouts for rewinding state
-			if (!(i % 500))
-				timeout_reset();
-
-			// Go breaking or slowing?
-			if (brake_or_slowing(cur_tac, abs_tac))
-				break;
-
-			// Now use prev_abs_tac as min value
-			if (abs_tac < prev_abs_tac)
-				prev_abs_tac = abs_tac;
-
-			// Unwinding again?
-			if (abs_tac > prev_abs_tac + config.unwinding_trigger_length)
-				unwinding(cur_tac);
-
-			print_position_periodically(cur_tac, long_print_delay);
-			break;
-		case SLOWING:
-			// We are in the braking range with overwinding?
-			if (abs_tac < config.braking_length - config.overwinding)
-			{
-				brake(cur_tac);
-				break;
-			}
-
-			cur_erpm = mc_interface_get_rpm();
-			abs_erpm = abs(cur_erpm);
-
-			// Slow enough for PID speed?
-			if (abs_erpm < config.slow_erpm)
-			{
-				slow(cur_tac, cur_erpm);
-				break;
-			}
-
-			// Print speed and tachometer to simpler tweaking slowing zone
-			if (i - prev_print > short_print_delay)
-			{
-				int overwinding = config.braking_length - config.overwinding;
-				int distance_left = abs(cur_tac) - overwinding;
-				prev_print = i;
-				commands_printf(
-					"Skypuff: slowing, position %.2f meters (%d steps), speed: %.1fms (%.0f ERPM), waiting for: %.1fms, %.2f meters left until overwinding zone",
-					(double)tac_steps_to_meters(cur_tac), cur_tac,
-					(double)erpm_to_ms(cur_erpm), (double)cur_erpm, (double)erpm_to_ms(config.slow_erpm),
-					(double)tac_steps_to_meters(distance_left));
-			}
-			break;
-		case SLOW:
-			cur_current = mc_interface_get_tot_current_directional_filtered();
-			abs_current = abs(cur_current);
-			cur_erpm = mc_interface_get_rpm();
-
-			// No timeouts for slow state
-			if (!(i % 500))
-				timeout_reset();
-
-			// Rotating direction changed or stopped?
-			if ((prev_erpm < 0 && cur_erpm >= 0) || (prev_erpm > 0 && cur_erpm <= 0))
-			{
-				commands_printf("Skypuff: rotation direction changed");
-				brake(cur_tac);
-				break;
-			}
-
-			prev_erpm = cur_erpm;
-
-			// If current above the limits - brake or unwinding
-			if (abs_current > config.slow_max_current)
-			{
-				commands_printf(
-					"Skypuff: slow pulling too high %.1fKg (%.1fA) is more %.1fKg (%.1fA)",
-					(double)(abs_current / config.kg_to_amps), (double)cur_current,
-					(double)(config.slow_max_current / config.kg_to_amps), (double)config.slow_max_current);
-
-				if (abs_tac < config.braking_length - config.overwinding)
-				{
-					brake(cur_tac);
-					break;
-				}
-				else
-				{
-					unwinding(cur_tac);
-					break;
-				}
-			}
-
-			// Slowly rewinded more then opposite side of (breaking - overwinding) zone?
-			if ((cur_erpm > 0 && cur_tac > config.braking_length - config.overwinding) ||
-				(cur_erpm < 0 && cur_tac < -config.braking_length + config.overwinding))
-			{
-				commands_printf("Skypuff: winded to opposite braking zone");
-				brake(cur_tac);
-				break;
-			}
-
-			if (i - prev_print > long_print_delay)
-			{
-				prev_print = i;
-				commands_printf("Skypuff: slow, position %.2f meters (%d steps), speed: %.1fms (%.0f ERPM), pulling: %.1fKg (%.1fA)",
-								(double)tac_steps_to_meters(cur_tac), cur_tac,
-								(double)erpm_to_ms(cur_erpm), (double)cur_erpm,
-								(double)(cur_current / config.kg_to_amps), (double)cur_current);
-			}
-			break;
-		default:
-			commands_printf("Skypuff: unknown control loop state, exiting!");
-			stop_now = true;
-		}
-
-		chThdSleepMilliseconds(1);
-	}
 }
 
 // Terminal command to change tachometer value
 static void terminal_move_tac(int argc, const char **argv)
 {
-	if (argc == 2)
-	{
-		float d = 0;
-		if (sscanf(argv[1], "%f", &d) == EOF)
-		{
-			commands_printf("move_tac: can't parse meters: '%s' value.", argv[1]);
-			return;
-		};
-
-		int steps = meters_to_tac_steps(d);
-
-		int cur_tac = mc_interface_get_tachometer_value(false);
-
-		int new_tac = cur_tac + steps;
-
-		commands_printf("move_tac: moving zero %.2fm (%d steps) %s, cur pos: %.2fm (%d steps), new pos: %.2fm (%d steps)",
-						(double)d, steps, d < 0 ? "backward" : "forward",
-						(double)tac_steps_to_meters(cur_tac), cur_tac,
-						(double)tac_steps_to_meters(new_tac), new_tac);
-
-		mc_interface_set_tachometer_value(new_tac);
-	}
-	else
-	{
-		commands_printf("This command requires one argument: 'move_tac -5.2' will move zero 5.2 meters backward");
-	}
 }
 
 // Terminal command to show configuration
@@ -584,25 +340,4 @@ static void terminal_show_skypuff_conf(int argc, const char **argv)
 {
 	(void)argc;
 	(void)argv;
-
-	int cur_tac = mc_interface_get_tachometer_value(false);
-	commands_printf("VESC additional configuration:");
-	commands_printf("  wheel diameter: %.2fmm", (double)(mc_conf->si_wheel_diameter * 1000));
-	commands_printf("  motor poles: %dp", mc_conf->si_motor_poles);
-	commands_printf("  gear ratio: %.5f", (double)mc_conf->si_gear_ratio);
-	commands_printf("SkyPUFF configuration:");
-	commands_printf("  state %s, current position: %.2f meters (%d steps)", state_str(), (double)tac_steps_to_meters(cur_tac), cur_tac);
-	commands_printf("  amperes per 1kg force: %.1fAKg", (double)config.kg_to_amps);
-	commands_printf("  braking range: %.2f meters (%d steps)", (double)tac_steps_to_meters(config.braking_length), config.braking_length);
-	commands_printf("  overwinding: %.2f meters (%d steps)", (double)tac_steps_to_meters(config.overwinding), config.overwinding);
-	commands_printf("  slowing range: %.2f meters (%d steps)", (double)tac_steps_to_meters(config.slowing_length), config.slowing_length);
-	commands_printf("  rewinding trigger range: %.2f meters (%d steps)",
-					(double)tac_steps_to_meters(config.rewinding_trigger_lenght), config.rewinding_trigger_lenght);
-	commands_printf("  unwinding trigger range: %.2f meters (%d steps)",
-					(double)tac_steps_to_meters(config.unwinding_trigger_length), config.unwinding_trigger_length);
-	commands_printf("  brake force: %.2fkg (%.1fA)", (double)(config.brake_current / config.kg_to_amps), (double)config.brake_current);
-	commands_printf("  unwinding force: %.2fkg (%.1fA)", (double)(config.unwinding_current / config.kg_to_amps), (double)config.unwinding_current);
-	commands_printf("  rewinding force: %.2fkg (%.1fA)", (double)(config.rewinding_current / config.kg_to_amps), (double)config.rewinding_current);
-	commands_printf("  slow speed: %.1fms (%.0f ERPM)", (double)erpm_to_ms(config.slow_erpm), (double)config.slow_erpm);
-	commands_printf("  maximum slow force: %.2fkg (%.1fA)", (double)(config.slow_max_current / config.kg_to_amps), (double)config.slow_max_current);
 }
