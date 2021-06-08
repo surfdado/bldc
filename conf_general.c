@@ -1881,3 +1881,8 @@ int conf_general_detect_apply_all_foc_can(bool detect_can, float max_power_loss,
 
 	return res;
 }
+
+#ifndef HAS_EXT_BUZZER
+void beep_on(bool x) { }
+void beep_off(bool x) { }
+#endif
