@@ -445,7 +445,8 @@ bool check_faults(bool ignoreTimers){
 	}
 
 	if(setpointAdjustmentType == REVERSESTOP){
-		if (fabsf(pitch_angle) > 15) {
+		if ((fabsf(pitch_angle) > 15) || (switch_state == OFF)) {
+			// Taking your foot off while reversing? Ignore delays
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
