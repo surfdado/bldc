@@ -43,9 +43,6 @@
 #define LED_RED_ON()            palSetPad(GPIOB, 1)
 #define LED_RED_OFF()           palClearPad(GPIOB, 1)
 
-// I can't get good balancing when I reverse it via config, so have to use this HACK
-#define REVERSE_ERPM_REPORTING (-1)
-
 /*
  * ADC Vector
  *
