@@ -120,6 +120,7 @@ static SwitchState switch_state;
 
 // Rumtime state values
 static BalanceState state;
+int log_balance_state;	// not static so we can log it
 static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
 static float pid_value;
@@ -987,6 +988,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 				reset_vars();
 				state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+				log_balance_state = state;
 
 				// Let the rider know that the board is ready
 				beep_on(1);
@@ -1014,6 +1016,7 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
 			case (RUNNING_TILTBACK_CONSTANT):
+				log_balance_state = state + 100 * setpointAdjustmentType;
 				autosuspend_timer = -1;
 
 				// Check for faults
@@ -1124,6 +1127,9 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
 			case (FAULT_STARTUP):
+				if (log_balance_state != FAULT_DUTY)
+					log_balance_state = state;
+
 				if (autosuspend_timer == -1)
 					autosuspend_timer = current_time;
 
@@ -1165,6 +1171,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				brake();
 				break;
 			case (FAULT_DUTY):
+				log_balance_state = FAULT_DUTY;
 				new_ride_state = RIDE_OFF;
 				// We need another fault to clear duty fault.
 				// Otherwise duty fault will clear itself as soon as motor pauses, then motor will spool up again.

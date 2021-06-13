@@ -78,6 +78,7 @@ static mutex_t send_buffer_mutex;
 static mutex_t terminal_mutex;
 static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
+extern int log_balance_state;
 
 extern float expacc, expavg, expaccmin, expaccmax, expki, expkd, expkp, expprop, expsetpoint, ttt;
 extern float exp_grunt_factor, exp_g_max, exp_g_min;
@@ -419,13 +420,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
-			uint8_t current_controller_id = app_get_configuration()->controller_id;
-#ifdef HW_HAS_DUAL_MOTORS
-			if (mc_interface_get_motor_thread() == 2) {
-				current_controller_id = utils_second_motor_id();
-			}
-#endif
-			send_buffer[ind++] = current_controller_id;
+			send_buffer[ind++] = log_balance_state; //current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
 			buffer_append_float16(send_buffer, NTC_TEMP_MOS1(), 1e1, &ind);
