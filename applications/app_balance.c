@@ -448,6 +448,10 @@ bool check_faults(bool ignoreTimers){
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
+		else if (abs_erpm > 3000) {
+			// above 3k erpm (~7mph on a 11 inch onewheel tire) don't ever produce switch faults!
+			fault_switch_timer = current_time;
+		}
 	} else {
 		fault_switch_timer = current_time;
 	}
