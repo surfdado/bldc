@@ -83,6 +83,11 @@ extern float adc1, adc2;
 
 extern float expacc, expavg, expaccmin, expaccmax, expki, expkd, expkp, expprop, expsetpoint, ttt;
 extern float exp_grunt_factor, exp_g_max, exp_g_min;
+extern float outer_pid_output, inner_pid_output, requested_current;;
+extern int limit_exceeded;
+extern float last_measured_acceleration;
+extern float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+static int logidx;
 
 //extern float OneKSamples1[100];
 //extern float OneKSamples2[100];
@@ -363,53 +368,51 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			mask = buffer_get_uint32(data, &ind2);
 			buffer_append_uint32(send_buffer, mask, &ind);
 		}
-
 		if (mask & ((uint32_t)1 << 0)) {
-			buffer_append_float16(send_buffer, mc_interface_temp_fet_filtered(), 1e1, &ind);
+			buffer_append_float16(send_buffer, requested_current/*mc_interface_temp_fet_filtered()*/, 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 1)) {
-			buffer_append_float16(send_buffer, expsetpoint, 1e1, &ind);
+			buffer_append_float16(send_buffer, inner_pid_output/*mc_interface_temp_fet_filtered()*/, 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 2)) {
-			buffer_append_float32(send_buffer, /*OneKSamples1[sampleIdx]*/ mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
+			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32(send_buffer, /*OneKSamples2[sampleIdx]*/ mc_interface_read_reset_avg_input_current(), 1e2, &ind);
-			//sampleIdx++; if (sampleIdx >= 100) sampleIdx = 0;
+			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, exp_grunt_factor, 1e2, &ind);
-			exp_g_min = 0;
+			buffer_append_float32(send_buffer, buf0[logidx], 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, ttt, 1e2, &ind);
-			exp_g_max = 0;
+			buffer_append_float32(send_buffer, buf1[logidx], 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
-			buffer_append_float16(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_duty_cycle_now(), 1e3, &ind);
+			buffer_append_float16(send_buffer, outer_pid_output/*mc_interface_get_duty_cycle_now()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 7)) {
-			buffer_append_float32(send_buffer, REVERSE_ERPM_REPORTING * mc_interface_get_rpm(), 1e0, &ind);
+			buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 8)) {
-			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
+			buffer_append_float16(send_buffer, last_measured_acceleration/*mc_interface_get_input_voltage_filtered()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, expkp, 1e4, &ind);
+			buffer_append_float32(send_buffer, buf2[logidx], 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, expki, 1e4, &ind);
-			//expaccmin = 100;
+			buffer_append_float32(send_buffer, buf3[logidx], 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, expkd, 1e4, &ind);
-			//expaccmax = -100;
+			buffer_append_float32(send_buffer, buf4[logidx], 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, expacc, 1e4, &ind);
+			buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind);
+			if ((buf1[0] == 9999) || (buf1[0] == 5555)) {
+				if (logidx < LOGBUFSIZE-1)
+					logidx++;
+			}
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
+			buffer_append_int32(send_buffer, limit_exceeded/*mc_interface_get_tachometer_value(false)*/, &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
 			buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
@@ -418,7 +421,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 16)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_float32(send_buffer, mcpwm_foc_get_smooth_erpm() /*mc_interface_get_pid_pos_now()*/, 1e6, &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
 			send_buffer[ind++] = log_balance_state; //current_controller_id;
@@ -426,7 +429,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (mask & ((uint32_t)1 << 18)) {
 			// most VESCs don't actually have temp sensors for individual mosfets
 			// For Onewheels, logging ADC values is much more useful:
-			buffer_append_float16(send_buffer, NTC_TEMP_MOS1(), 1e1, &ind);
+			buffer_append_float16(send_buffer, expsetpoint, 1e2, &ind);		// NTC_TEMP_MOS1()
 			buffer_append_float16(send_buffer, adc1, 1e2, &ind);	// NTC_TEMP_MOS2()
 			buffer_append_float16(send_buffer, adc2, 1e2, &ind);	// NTC_TEMP_MOS3()
 		}

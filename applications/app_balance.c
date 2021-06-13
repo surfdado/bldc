@@ -123,7 +123,7 @@ static BalanceState state;
 int log_balance_state;	// not static so we can log it
 static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
-static float pid_value;
+static float pid_value, last_pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float torquetilt_brk_start_current, torquetilt_brk_delay;
 static float torquetilt_filtered_current, torquetilt_interpolated;
@@ -152,11 +152,15 @@ static float accel_kp, accel_ki, accel_kd;
 static float inner_proportional, inner_integral, inner_derivative;
 static float inner_kp, inner_ki, inner_kd;
 static float d2_pt1_state, d2_pt1_k;
-static float last_measured_acceleration, last_smooth_erpm;
-static float outer_pid_output, inner_pid_output, requested_current;
+float last_measured_acceleration, last_smooth_erpm;
+float outer_pid_output, inner_pid_output, requested_current;
+int limit_exceeded;
 
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
+
+float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+int logidx;
 
 static float bq_z1, bq_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
@@ -312,6 +316,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	inner_kp = balance_conf.yaw_kp;
 	inner_ki = balance_conf.yaw_ki;
 	inner_kd = balance_conf.yaw_kd;
+	limit_exceeded = 0;
+	logidx = 0;
 
 	// ensure I didn't forget to load a suitable configuration
 	if (inner_kd == 0) {
@@ -948,7 +954,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 		// For logging only:
 		expacc = acceleration;
-		expki = integral;
+		//expki = integral;
 		//expkd = acceleration2;
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
@@ -1123,11 +1129,34 @@ static THD_FUNCTION(balance_thread, arg) {
 					// limit output current
 					float amplimit = 30.0;
 					if (fabsf(inner_pid_output) > amplimit) {
+						limit_exceeded++;
 						inner_pid_output = amplimit * SIGN(inner_pid_output);
 					}
 					requested_current = requested_current * 0.9 + inner_pid_output * 0.1;
 
+					// LOG 1000 samples once erpm exceeds threshold (Multi-ESC roll-steer erpm kp):
+					if (logidx < LOGBUFSIZE) {
+						if ((fabsf(erpm) > balance_conf.roll_steer_erpm_kp) || (logidx > 0)) {
+							if (logidx == 0) {
+								buf0[0] = 9999;
+								buf1[0] = 9999;
+								buf2[0] = 9999;
+								buf3[0] = 9999;
+								buf4[0] = 9999;
+								beep_alert(2, 0);
+								logidx++;
+							}
+							buf0[logidx] = pitch_angle;
+							buf1[logidx] = outer_pid_output;
+							buf2[logidx] = inner_pid_output;
+							buf3[logidx] = measured_acceleration;
+							buf4[logidx] = erpm;
+							logidx++;
+						}
+					}
+
 					set_current(requested_current, 0);
+					last_pid_value = inner_pid_output;
 					break;
 				}
 
@@ -1201,8 +1230,34 @@ static THD_FUNCTION(balance_thread, arg) {
 					pid_value += booster_pid;
 				}
 
+				// LOG:
+				if (logidx < LOGBUFSIZE) {
+					float erpm = mcpwm_foc_get_smooth_erpm();
+					if ((fabsf(erpm) > 1000) || (logidx > 0)) {
+						float measured_acceleration = erpm - last_smooth_erpm;
+						last_smooth_erpm = erpm;
+
+						if (logidx == 0) {
+							buf0[0] = 5555;
+							buf1[0] = 5555;
+							buf2[0] = 5555;
+							buf3[0] = 5555;
+							buf4[0] = 5555;
+							logidx++;
+							beep_alert(2, 0);
+						}
+						buf0[logidx] = pitch_angle;
+						buf1[logidx] = pid_value;
+						buf2[logidx] = last_erpm;	// standard raw erpm
+						buf3[logidx] = measured_acceleration;
+						buf4[logidx] = erpm;		// "smooth" erpm
+						logidx++;
+					}
+				}
+
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
+				expki = pid_value;
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
