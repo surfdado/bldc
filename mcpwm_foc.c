@@ -167,6 +167,26 @@ typedef struct {
 	float m_hall_dt_diff_now;
 } motor_all_state_t;
 
+static float smooth_erpm;
+static float bq_z1, bq_z2;
+static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
+static inline float biquad_filter(float in) {
+    float out = in * bq_a0 + bq_z1;
+    bq_z1 = in * bq_a1 + bq_z2 - bq_b1 * out;
+    bq_z2 = in * bq_a2 - bq_b2 * out;
+    return out;
+}
+static void biquad_config(float Fc) {
+	float K = tanf(M_PI * Fc);	// -0.0159;
+	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float norm = 1 / (1 + K / Q + K * K);
+	bq_a0 = K * K * norm;
+	bq_a1 = 2 * bq_a0;
+	bq_a2 = bq_a0;
+	bq_b1 = 2 * (K * K - 1) * norm;
+	bq_b2 = (1 - K / Q + K * K) * norm;
+}
+
 // Private variables
 static volatile bool m_dccal_done = false;
 static volatile float m_last_adc_isr_duration;
@@ -301,6 +321,10 @@ static volatile bool hfi_thd_stop;
 #else
 #define M_MOTOR(is_second_motor)  (((void)is_second_motor), &m_motor_1)
 #endif
+
+float mcpwm_foc_get_smooth_erpm() {
+	return smooth_erpm;
+}
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
 	utils_sys_lock_cnt();
@@ -537,6 +561,10 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 	m_motor_2.m_curr_ofs[2] = 2048;
 	update_hfi_samples(m_motor_2.m_conf->foc_hfi_samples, &m_motor_2);
 #endif
+
+	// Configure for 100 Hertz (hard-coded atm)
+	biquad_config(100.0 / conf_m1->foc_f_sw);
+	smooth_erpm = 0;
 
 	virtual_motor_init(conf_m1);
 
@@ -2697,6 +2725,9 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	// Run PLL for speed estimation
 	pll_run(motor_now->m_motor_state.phase, dt, &motor_now->m_pll_phase, &motor_now->m_pll_speed, conf_now);
 	motor_now->m_motor_state.speed_rad_s = motor_now->m_pll_speed;
+
+	float erpm = motor_now->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
+	smooth_erpm = biquad_filter(erpm);
 
 	// Low latency speed estimation, for e.g. HFI.
 	{
