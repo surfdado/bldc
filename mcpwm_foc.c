@@ -168,6 +168,11 @@ typedef struct {
 } motor_all_state_t;
 
 static float smooth_erpm;
+
+//float erpmsamples[1001];
+//float accsamples[1001];
+static unsigned int acccount;
+
 static float bq_z1, bq_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
 static inline float biquad_filter(float in) {
@@ -565,6 +570,7 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 	// Configure for 100 Hertz (hard-coded atm)
 	biquad_config(100.0 / conf_m1->foc_f_sw);
 	smooth_erpm = 0;
+	acccount = 0;
 
 	virtual_motor_init(conf_m1);
 
@@ -2728,6 +2734,39 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 
 	float erpm = motor_now->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
 	smooth_erpm = biquad_filter(erpm);
+
+	/*if ((acccount == 0) && (fabsf(erpm) > 3000.0))  {
+		erpmsamples[0] = 9999.0;
+		accsamples[0] = 7777.0;
+		acccount++;
+	}
+	if (acccount > 0) {
+		acccount++;
+		int idx = acccount;
+		if (idx < 1000) {
+			if (idx < 3) {
+				if (foc_freq < 20000){
+					erpmsamples[idx] = 5555;
+					accsamples[idx] = 5555;
+				}
+				else {
+					erpmsamples[idx] = foc_freq;
+					accsamples[idx] = foc_freq;
+				}
+			}
+			else {
+				erpmsamples[idx] = erpm;
+				accsamples[idx] = smooth_erpm;
+			}
+		}
+		else {
+			if (erpmsamples[0] == 1111) {
+				acccount = 0;
+			}
+			else
+				acccount = 1000;
+		}
+		}*/
 
 	// Low latency speed estimation, for e.g. HFI.
 	{
