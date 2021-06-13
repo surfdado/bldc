@@ -32,7 +32,7 @@
 #include "datatypes.h"
 #include "comm_can.h"
 #include "buzzer.h"
-
+#include "mcpwm_foc.h"
 
 #include <math.h>
 
@@ -147,6 +147,14 @@ static float autosuspend_timer, autosuspend_timeout;
 static float acceleration, acceleration2, last_erpm;
 static float integral_max, integral_min;
 
+static bool enable_cascaded_pids;
+static float accel_kp, accel_ki, accel_kd;
+static float inner_proportional, inner_integral, inner_derivative;
+static float inner_kp, inner_ki, inner_kd;
+static float d2_pt1_state, d2_pt1_k;
+static float last_measured_acceleration, last_smooth_erpm;
+static float outer_pid_output, inner_pid_output, requested_current;
+
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
 
@@ -177,6 +185,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		float dT = 1.0 / balance_conf.hertz;
 		float RC = 1.0 / ( 2.0 * M_PI * balance_conf.kd_pt1_frequency);
 		d_pt1_k =  dT / (RC + dT);
+		// 20Hz
+		RC = 1.0 / ( 2.0 * M_PI * 20 );
+		d2_pt1_k =  dT / (RC + dT);
 	}
 	startup_step_size = balance_conf.startup_speed / balance_conf.hertz;
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
@@ -291,6 +302,32 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		use_reverse_stop = false;
 	}
 
+	enable_cascaded_pids = true;
+	accel_kp = balance_conf.kp, accel_ki = balance_conf.ki, accel_kd = balance_conf.kd;
+	last_measured_acceleration = 0;
+	inner_proportional = 0;
+	inner_integral = 0;
+	d2_pt1_state = 0;
+	inner_derivative = 0;
+	inner_kp = balance_conf.yaw_kp;
+	inner_ki = balance_conf.yaw_ki;
+	inner_kd = balance_conf.yaw_kd;
+
+	// ensure I didn't forget to load a suitable configuration
+	if (inner_kd == 0) {
+		enable_cascaded_pids = false;
+		beep_on(1);
+		chThdSleepMilliseconds(100);
+		beep_off(1);
+		chThdSleepMilliseconds(100);
+		beep_on(1);
+		chThdSleepMilliseconds(100);
+		beep_off(1);
+	}
+	else {
+		enable_cascaded_pids = true;
+	}
+
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
 	case SHUTDOWN_MODE_OFF_AFTER_1M: autosuspend_timeout = 60; break;
@@ -338,6 +375,14 @@ void reset_vars(void){
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
 
+	// ensure I didn't forget to load a suitable configuration
+	if (inner_kd == 0) {
+		enable_cascaded_pids = false;
+	}
+	else {
+		enable_cascaded_pids = true;
+	}
+
 	if (disable_all_5_3_features) {
 		kp = kp_acc;
 		ki = ki_acc;
@@ -358,6 +403,17 @@ void reset_vars(void){
 			kd = kd_acc / 2;
 		}
 	}
+
+	// Cascaded control
+	outer_pid_output = 0;
+	last_measured_acceleration = 0;
+	last_smooth_erpm = 0;
+	inner_proportional = 0;
+	inner_integral = 0;
+	d2_pt1_state = 0;
+	inner_derivative = 0;
+	inner_pid_output = 0;
+	requested_current = 0;
 
 	exp_g_max = 0;
 	exp_g_min = 0;
@@ -1016,8 +1072,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				setpoint = setpoint_target_interpolated;
 				if (disable_all_5_3_features == false) {
 					if (setpointAdjustmentType == TILTBACK) {
-						apply_torquetilt();
-						apply_turntilt();
+						//apply_torquetilt();
+						//apply_turntilt();
 					}
 				}
 
@@ -1037,6 +1093,46 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = d_pt1_state;
 				}
 
+				if (enable_cascaded_pids) {
+					// outer PID output determines the desired acceleration
+					outer_pid_output = (accel_kp * proportional) + (accel_ki * integral) + (accel_kd * derivative);
+					float desired_acceleration = - outer_pid_output;
+
+					// inner PID:
+					float erpm = mcpwm_foc_get_smooth_erpm();
+					// at low erpms the motor can be VERY choppy, so we gotta filter it
+					float measured_acceleration = last_measured_acceleration * 0.95 + (erpm - last_smooth_erpm) * 0.05;
+
+					inner_proportional = desired_acceleration - measured_acceleration;
+					inner_integral += inner_proportional;
+
+					// reuse same 10Hz PT1 filter, replace with biquad filter later...
+					inner_derivative = last_measured_acceleration - measured_acceleration;
+					d2_pt1_state = d2_pt1_state + d2_pt1_k * (inner_derivative - d2_pt1_state);
+					inner_derivative = d2_pt1_state;
+					last_measured_acceleration = measured_acceleration;
+
+					// another hard coded 10xfilter to reduce noise
+					last_smooth_erpm = last_smooth_erpm * 0.9 + erpm * 0.1;
+
+					inner_pid_output =
+						(inner_kp * inner_proportional) +
+						(inner_ki * inner_integral) +
+						(inner_kd * inner_derivative);
+
+					// limit output current
+					float amplimit = 30.0;
+					if (fabsf(inner_pid_output) > amplimit) {
+						inner_pid_output = amplimit * SIGN(inner_pid_output);
+					}
+					requested_current = requested_current * 0.9 + inner_pid_output * 0.1;
+
+					set_current(requested_current, 0);
+					break;
+				}
+
+				/////////////////////////////////////////////////////////////////////////
+				// Only executed if Cascaded PIDs are disabled!
 				if (disable_all_5_3_features == false) {
 					// Limit integral
 					integral = fminf(integral, integral_max);
