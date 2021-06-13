@@ -169,26 +169,6 @@ static void biquad_config(float Fc) {
 	bq_b2 = (1 - K / Q + K * K) * norm;
 }
 
-static float bq2_z1, bq2_z2;
-static float bq2_a0, bq2_a1, bq2_a2, bq2_b1, bq2_b2;
-static inline float biquad2_filter(float in) {
-    float out = in * bq2_a0 + bq2_z1;
-    bq2_z1 = in * bq2_a1 + bq2_z2 - bq2_b1 * out;
-    bq2_z2 = in * bq2_a2 - bq2_b2 * out;
-    return out;
-}
-void biquad2_config(float Fc);
-void biquad2_config(float Fc) {
-	float K = tanf(M_PI * Fc);	// -0.0159;
-	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
-	float norm = 1 / (1 + K / Q + K * K);
-	bq2_a0 = K * K * norm;
-	bq2_a1 = 2 * bq2_a0;
-	bq2_a2 = bq2_a0;
-	bq2_b1 = 2 * (K * K - 1) * norm;
-	bq2_b2 = (1 - K / Q + K * K) * norm;
-}
-
 void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	balance_conf = *conf;
 	imu_conf = *conf2;
@@ -294,7 +274,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (cutoff_freq < 3)
 		cutoff_freq = 3;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
-	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
 
 	// Limit integral buildup, hard coded for now
 	if (balance_conf.roll_steer_erpm_kp >= 1) {
@@ -386,8 +365,6 @@ void reset_vars(void){
 	// biquad filter for acceleration:
 	bq_z1 = 0;
 	bq_z2 = 0;
-	bq2_z1 = 0;
-	bq2_z2 = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -911,7 +888,6 @@ static THD_FUNCTION(balance_thread, arg) {
 		sampleIdx = 0;*/
 
 		acceleration = biquad_filter(erpm - last_erpm);
-		//acceleration2 = biquad2_filter(acc[0]);
 		last_erpm = erpm;
 
 		// For logging only:
