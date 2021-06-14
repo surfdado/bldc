@@ -168,17 +168,33 @@ typedef struct {
 } motor_all_state_t;
 
 static float smooth_erpm;
+static float smooth_erpm_fast;
+static float smooth_erpm_faster;
 
 //float erpmsamples[1001];
 //float accsamples[1001];
 static unsigned int acccount;
 
 static float bq_z1, bq_z2;
+static float bq2_z1, bq2_z2;
+static float bq3_z1, bq3_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
 static inline float biquad_filter(float in) {
     float out = in * bq_a0 + bq_z1;
     bq_z1 = in * bq_a1 + bq_z2 - bq_b1 * out;
     bq_z2 = in * bq_a2 - bq_b2 * out;
+    return out;
+}
+static inline float biquad2_filter(float in) {
+    float out = in * bq_a0 + bq2_z1;
+    bq2_z1 = in * bq_a1 + bq2_z2 - bq_b1 * out;
+    bq2_z2 = in * bq_a2 - bq_b2 * out;
+    return out;
+}
+static inline float biquad3_filter(float in) {
+    float out = in * bq_a0 + bq3_z1;
+    bq3_z1 = in * bq_a1 + bq3_z2 - bq_b1 * out;
+    bq3_z2 = in * bq_a2 - bq_b2 * out;
     return out;
 }
 static void biquad_config(float Fc) {
@@ -190,6 +206,12 @@ static void biquad_config(float Fc) {
 	bq_a2 = bq_a0;
 	bq_b1 = 2 * (K * K - 1) * norm;
 	bq_b2 = (1 - K / Q + K * K) * norm;
+	bq_z1 = 0;
+	bq_z2 = 0;
+	bq2_z1 = 0;
+	bq2_z2 = 0;
+	bq3_z1 = 0;
+	bq3_z2 = 0;
 }
 
 // Private variables
@@ -329,6 +351,12 @@ static volatile bool hfi_thd_stop;
 
 float mcpwm_foc_get_smooth_erpm() {
 	return smooth_erpm;
+}
+float mcpwm_foc_get_smooth_erpm_fast() {
+	return smooth_erpm_fast;
+}
+float mcpwm_foc_get_smooth_erpm_faster() {
+	return smooth_erpm_faster;
 }
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
@@ -570,6 +598,8 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 	// Configure for 100 Hertz (hard-coded atm)
 	biquad_config(100.0 / conf_m1->foc_f_sw);
 	smooth_erpm = 0;
+	smooth_erpm_fast = 0;
+	smooth_erpm_faster = 0;
 	acccount = 0;
 
 	virtual_motor_init(conf_m1);
@@ -2734,6 +2764,8 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 
 	float erpm = motor_now->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
 	smooth_erpm = biquad_filter(erpm);
+	smooth_erpm_fast = biquad2_filter(mcpwm_foc_get_rpm_fast());
+	smooth_erpm_faster = biquad3_filter(mcpwm_foc_get_rpm_faster());
 
 	/*if ((acccount == 0) && (fabsf(erpm) > 3000.0))  {
 		erpmsamples[0] = 9999.0;

@@ -160,7 +160,34 @@ float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
 
 float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+float logtimer;
 int logidx;
+
+typedef struct{
+        float a0, a1, a2, b1, b2;
+        float z1, z2;
+} Biquad;
+static Biquad accel1_biquad, accel2_biquad;
+
+// Utility Functions
+static float biquad_process(float in, Biquad *bq) {
+    float out = in * bq->a0 + bq->z1;
+    bq->z1 = in * bq->a1 + bq->z2 - bq->b1 * out;
+    bq->z2 = in * bq->a2 - bq->b2 * out;
+    return out;
+}
+static void biquad_configure(float Fc, Biquad *bq) {
+	float K = tanf(M_PI * Fc);	// -0.0159;
+	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float norm = 1 / (1 + K / Q + K * K);
+	bq->a0 = K * K * norm;
+	bq->a1 = 2 * bq->a0;
+	bq->a2 = bq->a0;
+	bq->b1 = 2 * (K * K - 1) * norm;
+	bq->b2 = (1 - K / Q + K * K) * norm;
+	bq->z1 = 0;
+	bq->z2 = 0;
+}
 
 static float bq_z1, bq_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
@@ -290,6 +317,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		cutoff_freq = 3;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
 
+	biquad_configure(50 / ((float)balance_conf.hertz), &accel1_biquad);
+	biquad_configure(50 / ((float)balance_conf.hertz), &accel2_biquad);
+	
 	// Limit integral buildup, hard coded for now
 	if (balance_conf.roll_steer_erpm_kp >= 1) {
 		integral_max = balance_conf.roll_steer_erpm_kp * 20000.0; // acceleration
@@ -318,6 +348,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	inner_kd = balance_conf.yaw_kd;
 	limit_exceeded = 0;
 	logidx = 0;
+	buf0[0] = 0;
+	buf1[0] = 0;
+	buf2[0] = 0;
+	buf3[0] = 0;
+	buf4[0] = 0;
 
 	// ensure I didn't forget to load a suitable configuration
 	if (inner_kd == 0) {
@@ -936,19 +971,6 @@ static THD_FUNCTION(balance_thread, arg) {
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
 
-		//if (sampleIdx == 0) {
-		//	OneKSamples1[0] = 999.999;
-		//	OneKSamples2[0] = 999.999;
-		//	sampleIdx++;
-		//}
-		float acc[3];
-		imu_get_accel(acc);
-		/*OneKSamples1[sampleIdx] = motor_current;
-		OneKSamples2[sampleIdx] = acc[0];
-		sampleIdx++;
-		if (sampleIdx == 100)
-		sampleIdx = 0;*/
-
 		acceleration = biquad_filter(erpm - last_erpm);
 		last_erpm = erpm;
 
@@ -1076,10 +1098,10 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if (disable_all_5_3_features == false) {
+				if ((disable_all_5_3_features == false) && (enable_cascaded_pids == false)) {
 					if (setpointAdjustmentType == TILTBACK) {
-						//apply_torquetilt();
-						//apply_turntilt();
+						apply_torquetilt();
+						apply_turntilt();
 					}
 				}
 
@@ -1105,9 +1127,11 @@ static THD_FUNCTION(balance_thread, arg) {
 					float desired_acceleration = - outer_pid_output;
 
 					// inner PID:
+					float acc[3];
+					imu_get_accel_derotated(acc);
 					float erpm = mcpwm_foc_get_smooth_erpm();
 					// at low erpms the motor can be VERY choppy, so we gotta filter it
-					float measured_acceleration = last_measured_acceleration * 0.95 + (erpm - last_smooth_erpm) * 0.05;
+					float measured_acceleration = acc[0] * 20;//last_measured_acceleration * 0.95 + (erpm - last_smooth_erpm) * 0.05;
 
 					inner_proportional = desired_acceleration - measured_acceleration;
 					inner_integral += inner_proportional;
@@ -1119,7 +1143,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					last_measured_acceleration = measured_acceleration;
 
 					// another hard coded 10xfilter to reduce noise
-					last_smooth_erpm = last_smooth_erpm * 0.9 + erpm * 0.1;
+					//last_smooth_erpm = last_smooth_erpm * 0.9 + erpm * 0.1;
 
 					inner_pid_output =
 						(inner_kp * inner_proportional) +
@@ -1146,8 +1170,10 @@ static THD_FUNCTION(balance_thread, arg) {
 								beep_alert(2, 0);
 								logidx++;
 							}
+							float gyro[3];
+							imu_get_gyro(gyro);
 							buf0[logidx] = pitch_angle;
-							buf1[logidx] = outer_pid_output;
+							buf1[logidx] = gyro[1];//outer_pid_output;
 							buf2[logidx] = inner_pid_output;
 							buf3[logidx] = measured_acceleration;
 							buf4[logidx] = erpm;
@@ -1233,9 +1259,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				// LOG:
 				if (logidx < LOGBUFSIZE) {
 					float erpm = mcpwm_foc_get_smooth_erpm();
-					if ((fabsf(erpm) > 1000) || (logidx > 0)) {
-						float measured_acceleration = erpm - last_smooth_erpm;
-						last_smooth_erpm = erpm;
+					float trig = balance_conf.yaw_current_clamp;
+					if (((fabsf(erpm) >= trig) && (fabsf(erpm) < trig+100)) || (logidx > 0)) {
 
 						if (logidx == 0) {
 							buf0[0] = 5555;
@@ -1246,12 +1271,31 @@ static THD_FUNCTION(balance_thread, arg) {
 							logidx++;
 							beep_alert(2, 0);
 						}
+						float acc[3];
+						imu_get_accel_derotated(acc);
+						float imu_acc = biquad_process(acc[0], &accel2_biquad);
 						buf0[logidx] = pitch_angle;
 						buf1[logidx] = pid_value;
 						buf2[logidx] = last_erpm;	// standard raw erpm
-						buf3[logidx] = measured_acceleration;
+						buf3[logidx] = acc[0];//measured_acceleration;
 						buf4[logidx] = erpm;		// "smooth" erpm
 						logidx++;
+					}
+				}
+				else {
+					if (buf0[0] == 1111) {
+						if (logidx == LOGBUFSIZE) {
+							// signal that logging is done
+							logidx++;
+							logtimer = current_time;
+							beep_alert(1, 1);
+						}
+						else {
+							// re-arm logging after 5 seconds
+							if ((current_time - logtimer) > 5000) {
+								logidx = 0;
+							}
+						}
 					}
 				}
 

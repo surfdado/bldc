@@ -410,6 +410,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				if (logidx < LOGBUFSIZE-1)
 					logidx++;
 			}
+			else
+				logidx = 0;
 		}
 		if (mask & ((uint32_t)1 << 13)) {
 			buffer_append_int32(send_buffer, limit_exceeded/*mc_interface_get_tachometer_value(false)*/, &ind);
