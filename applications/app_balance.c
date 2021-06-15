@@ -115,7 +115,7 @@ static float duty_cycle, abs_duty_cycle;
 static float erpm, abs_erpm, avg_erpm;
 static float motor_current;
 static float motor_position;
-static float adc1, adc2;
+float adc1, adc2;
 static SwitchState switch_state;
 
 // Rumtime state values
