@@ -138,6 +138,7 @@ static float d_pt1_state, d_pt1_k;
 static float max_temp_fet;
 static bool use_soft_start;
 static bool use_reverse_stop;
+static bool allow_high_speed_full_switch_faults;
 static bool disable_all_5_3_features;
 static float reverse_total_erpm;
 static RideState ride_state, new_ride_state;
@@ -203,6 +204,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	reverse_stop_step_size = 100.0 / balance_conf.hertz;
 	use_soft_start = (balance_conf.startup_speed < 10);
+
+	// if the full switch delay ends in 1, we don't allow high speed full switch faults
+	int fullswitch_delay = balance_conf.fault_delay_switch_full / 10;
+	int delay_rest = balance_conf.fault_delay_switch_full - (fullswitch_delay * 10);
+	allow_high_speed_full_switch_faults = (delay_rest != 1);
 
 	float startup_speed = balance_conf.startup_speed;
 	int ss = (int) startup_speed;
