@@ -160,7 +160,9 @@ float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
 
 float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+float b0, b1, b2, b3, b4;
 float logtimer;
+int logperiod, logdelaycounter;
 int logidx;
 
 typedef struct{
@@ -353,6 +355,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	buf2[0] = 0;
 	buf3[0] = 0;
 	buf4[0] = 0;
+	b0 = b1 = b2 = b3 = b4 = 0;
+	logperiod = (int) balance_conf.yaw_current_clamp;
+	logdelaycounter = 0;
 
 	// ensure I didn't forget to load a suitable configuration
 	if (inner_kd == 0) {
@@ -1160,24 +1165,49 @@ static THD_FUNCTION(balance_thread, arg) {
 
 					// LOG 1000 samples once erpm exceeds threshold (Multi-ESC roll-steer erpm kp):
 					if (logidx < LOGBUFSIZE) {
-						if ((fabsf(erpm) > balance_conf.roll_steer_erpm_kp) || (logidx > 0)) {
-							if (logidx == 0) {
-								buf0[0] = 9999;
-								buf1[0] = 9999;
-								buf2[0] = 9999;
-								buf3[0] = 9999;
-								buf4[0] = 9999;
-								beep_alert(2, 0);
+						float trig = balance_conf.roll_steer_erpm_kp;
+						if (((fabsf(erpm) >= trig) && (fabsf(erpm) < trig+100)) || (logidx > 0)) {
+							b0 += pitch_angle;
+							b1 += outer_pid_output;
+							b2 += inner_pid_output;
+							b3 += measured_acceleration;
+							b4 += erpm;
+
+							logdelaycounter++;
+							if (logdelaycounter >= logperiod) {
+								logdelaycounter = 0;
+
+								if (logidx == 0) {
+									buf0[0] = 9999;
+									buf1[0] = 9999;
+									buf2[0] = 9999;
+									buf3[0] = 9999;
+									buf4[0] = 9999;
+									beep_alert(2, 0);
+									logidx++;
+								}
+								buf0[logidx] = b0 / logperiod;
+								buf1[logidx] = b1 / logperiod;
+								buf2[logidx] = b2 / logperiod;
+								buf3[logidx] = b3 / logperiod;
+								buf4[logidx] = b4 / logperiod;
 								logidx++;
+								b0 = b1 = b2 = b3 = b4 = 0;
 							}
-							float gyro[3];
-							imu_get_gyro(gyro);
-							buf0[logidx] = pitch_angle;
-							buf1[logidx] = gyro[1];//outer_pid_output;
-							buf2[logidx] = inner_pid_output;
-							buf3[logidx] = measured_acceleration;
-							buf4[logidx] = erpm;
+						}
+					}
+					else if (buf0[0] == 1111) {
+						if (logidx == LOGBUFSIZE) {
+							// signal that logging is done
 							logidx++;
+							logtimer = current_time;
+							beep_alert(1, 1);
+						}
+						else {
+							// re-arm logging after 5 seconds
+							if ((current_time - logtimer) > 5000) {
+								logidx = 0;
+							}
 						}
 					}
 
@@ -1259,42 +1289,50 @@ static THD_FUNCTION(balance_thread, arg) {
 				// LOG:
 				if (logidx < LOGBUFSIZE) {
 					float erpm = mcpwm_foc_get_smooth_erpm();
-					float trig = balance_conf.yaw_current_clamp;
+					float trig = balance_conf.roll_steer_erpm_kp;
 					if (((fabsf(erpm) >= trig) && (fabsf(erpm) < trig+100)) || (logidx > 0)) {
-
-						if (logidx == 0) {
-							buf0[0] = 5555;
-							buf1[0] = 5555;
-							buf2[0] = 5555;
-							buf3[0] = 5555;
-							buf4[0] = 5555;
-							logidx++;
-							beep_alert(2, 0);
-						}
+						logdelaycounter++;
 						float acc[3];
 						imu_get_accel_derotated(acc);
-						float imu_acc = biquad_process(acc[0], &accel2_biquad);
-						buf0[logidx] = pitch_angle;
-						buf1[logidx] = pid_value;
-						buf2[logidx] = last_erpm;	// standard raw erpm
-						buf3[logidx] = acc[0];//measured_acceleration;
-						buf4[logidx] = erpm;		// "smooth" erpm
-						logidx++;
+						b0 += pitch_angle;
+						b1 += pid_value;
+						b2 += last_erpm;	// standard raw erpm
+						b3 += acc[0];//measured_acceleration;
+						b4 += erpm;		// "smooth" erpm
+
+						if (logdelaycounter >= logperiod) {
+							logdelaycounter = 0;
+
+							if (logidx == 0) {
+								buf0[0] = 5555;
+								buf1[0] = 5555;
+								buf2[0] = 5555;
+								buf3[0] = 5555;
+								buf4[0] = 5555;
+								logidx++;
+								beep_alert(2, 0);
+							}
+							buf0[logidx] = b0 / logperiod;
+							buf1[logidx] = b1 / logperiod;
+							buf2[logidx] = b2 / logperiod;
+							buf3[logidx] = b3 / logperiod;
+							buf4[logidx] = b4 / logperiod;
+							logidx++;
+							b0 = b1 = b2 = b3 = b4 = 0;
+						}
 					}
 				}
-				else {
-					if (buf0[0] == 1111) {
-						if (logidx == LOGBUFSIZE) {
-							// signal that logging is done
-							logidx++;
-							logtimer = current_time;
-							beep_alert(1, 1);
-						}
-						else {
-							// re-arm logging after 5 seconds
-							if ((current_time - logtimer) > 5000) {
-								logidx = 0;
-							}
+				else if (buf0[0] == 1111) {
+					if (logidx == LOGBUFSIZE) {
+						// signal that logging is done
+						logidx++;
+						logtimer = current_time;
+						beep_alert(1, 1);
+					}
+					else {
+						// re-arm logging after 5 seconds
+						if ((current_time - logtimer) > 5000) {
+							logidx = 0;
 						}
 					}
 				}
