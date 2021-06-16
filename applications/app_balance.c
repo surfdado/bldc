@@ -115,7 +115,8 @@ static float duty_cycle, abs_duty_cycle;
 static float erpm, abs_erpm, avg_erpm;
 static float motor_current;
 static float motor_position;
-float adc1, adc2;
+static int erpm_sign;
+float adc1, adc2;	// we now log those too
 static SwitchState switch_state;
 
 // Rumtime state values
@@ -319,7 +320,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		cutoff_freq = 3;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
 
-	biquad_configure(50 / ((float)balance_conf.hertz), &accel1_biquad);
+	biquad_configure(balance_conf.booster_ramp / ((float)balance_conf.hertz), &accel1_biquad);
 	biquad_configure(50 / ((float)balance_conf.hertz), &accel2_biquad);
 	
 	// Limit integral buildup, hard coded for now
@@ -338,7 +339,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		use_reverse_stop = false;
 	}
 
-	enable_cascaded_pids = true;
+	enable_cascaded_pids = 	balance_conf.multi_esc;
 	accel_kp = balance_conf.kp, accel_ki = balance_conf.ki, accel_kd = balance_conf.kd;
 	last_measured_acceleration = 0;
 	inner_proportional = 0;
@@ -359,9 +360,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	logperiod = (int) balance_conf.yaw_current_clamp;
 	logdelaycounter = 0;
 
-	// ensure I didn't forget to load a suitable configuration
-	if (inner_kd == 0) {
-		enable_cascaded_pids = false;
+	if (enable_cascaded_pids) {
 		beep_on(1);
 		chThdSleepMilliseconds(100);
 		beep_off(1);
@@ -370,9 +369,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		chThdSleepMilliseconds(100);
 		beep_off(1);
 	}
-	else {
-		enable_cascaded_pids = true;
-	}
+
+	if (mc_interface_get_configuration()->m_invert_direction)
+		erpm_sign = -1;
+	else
+		erpm_sign = 1;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
@@ -420,14 +421,6 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
-
-	// ensure I didn't forget to load a suitable configuration
-	if (inner_kd == 0) {
-		enable_cascaded_pids = false;
-	}
-	else {
-		enable_cascaded_pids = true;
-	}
 
 	if (disable_all_5_3_features) {
 		kp = kp_acc;
@@ -907,14 +900,6 @@ void brake(void){
 	timeout_reset();
 	// Set current
 	mc_interface_set_brake_current(balance_conf.brake_current);
-	if(balance_conf.multi_esc){
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current_brake(msg->id, balance_conf.brake_current);
-			}
-		}
-	}
 	beep_off(true);
 	// we've stopped riding => turn the lights off
 	// TODO: Add delay (to help spot the vehicle after a crash?)
@@ -926,18 +911,7 @@ void set_current(float current, float yaw_current){
 	// Reset the timeout
 	timeout_reset();
 	// Set current
-	if(balance_conf.multi_esc){
-		mc_interface_set_current(current + yaw_current);
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current(msg->id, current - yaw_current);// Assume 2 motors, i don't know how to steer 3 anyways
-			}
-		}
-	} else {
-		mc_interface_set_current(current);
-	}
+	mc_interface_set_current(current);
 }
 
 void app_balance_stop(void) {
@@ -986,16 +960,6 @@ static THD_FUNCTION(balance_thread, arg) {
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
-		if(balance_conf.multi_esc){
-			avg_erpm = erpm;
-			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-				can_status_msg *msg = comm_can_get_status_msg_index(i);
-				if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-					avg_erpm += msg->rpm;
-				}
-			}
-			avg_erpm = avg_erpm/2;// Assume 2 motors, i don't know how to steer 3 anyways
-		}
 		adc1 = (((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG;
 #ifdef ADC_IND_EXT2
 		adc2 = (((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG;
@@ -1128,8 +1092,9 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				if (enable_cascaded_pids) {
 					// outer PID output determines the desired acceleration
-					outer_pid_output = (accel_kp * proportional) + (accel_ki * integral) + (accel_kd * derivative);
-					float desired_acceleration = - outer_pid_output;
+					const float pid_scale = balance_conf.booster_current;
+					outer_pid_output = pid_scale * ((accel_kp * proportional) + (accel_ki * integral) + (accel_kd * derivative));
+					float desired_acceleration = outer_pid_output;
 
 					// inner PID:
 					float acc[3];
@@ -1156,12 +1121,14 @@ static THD_FUNCTION(balance_thread, arg) {
 						(inner_kd * inner_derivative);
 
 					// limit output current
-					float amplimit = 30.0;
+					float amplimit = 50.0;
 					if (fabsf(inner_pid_output) > amplimit) {
 						limit_exceeded++;
 						inner_pid_output = amplimit * SIGN(inner_pid_output);
 					}
-					requested_current = requested_current * 0.9 + inner_pid_output * 0.1;
+					//requested_current = requested_current * 0.9 + inner_pid_output * 0.1;
+					//requested_current = biquad_process(inner_pid_output, &accel1_biquad);
+					requested_current = inner_pid_output;
 
 					// LOG 1000 samples once erpm exceeds threshold (Multi-ESC roll-steer erpm kp):
 					if (logidx < LOGBUFSIZE) {
@@ -1171,7 +1138,7 @@ static THD_FUNCTION(balance_thread, arg) {
 							b1 += outer_pid_output;
 							b2 += inner_pid_output;
 							b3 += measured_acceleration;
-							b4 += erpm;
+							b4 += erpm_sign * erpm;
 
 							logdelaycounter++;
 							if (logdelaycounter >= logperiod) {
@@ -1298,7 +1265,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						b1 += pid_value;
 						b2 += last_erpm;	// standard raw erpm
 						b3 += acc[0];//measured_acceleration;
-						b4 += erpm;		// "smooth" erpm
+						b4 += erpm_sign * erpm;		// "smooth" erpm
 
 						if (logdelaycounter >= logperiod) {
 							logdelaycounter = 0;
