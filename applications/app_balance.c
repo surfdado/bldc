@@ -297,13 +297,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
 
 	// Limit integral buildup, hard coded for now
-	if (REVERSE_ERPM_REPORTING == 1) {
-		integral_max = 20000.0; // acceleration
-		integral_min = -10000.0; // braking
+	if (balance_conf.roll_steer_erpm_kp >= 1) {
+		integral_max = balance_conf.roll_steer_erpm_kp * 20000.0; // acceleration
+		integral_min = (-1) * balance_conf.roll_steer_erpm_kp * 10000.0; // braking
 	}
 	else {
-		integral_max = 10000.0;	// braking
-		integral_min = -20000.0; // acceleration
+		integral_max = 30000.0; // acceleration
+		integral_min = -15000.0; // braking
 	}
 
 	disable_all_5_3_features = (balance_conf.deadzone != 0);
