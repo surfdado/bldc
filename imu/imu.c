@@ -273,6 +273,28 @@ void imu_get_accel_derotated(float *accel) {
 	accel[2] = c_az;
 }
 
+void imu_get_accel_derotated_yawless(float *accel) {
+	float rpy[3];
+	imu_get_rpy(rpy);
+
+	const float ax = m_accel[0];
+	const float ay = m_accel[1];
+	const float az = m_accel[2];
+
+	const float sr = sinf(rpy[0]);
+	const float cr = -cosf(rpy[0]);
+	const float sp = sinf(rpy[1]);
+	const float cp = -cosf(rpy[1]);
+
+	float c_ax = ax * cp + ay * sp * sr + az * sp * cr;
+	float c_ay = ay * cr - az * sr;
+	float c_az = -ax * sp + ay * cp * sr + az * cp * cr;
+
+	accel[0] = c_ax;
+	accel[1] = c_ay;
+	accel[2] = c_az;
+}
+
 void imu_get_quaternions(float *q) {
 	q[0] = m_att.q0;
 	q[1] = m_att.q1;

@@ -50,6 +50,7 @@ void imu_get_accel(float *accel);
 void imu_get_gyro(float *gyro);
 void imu_get_mag(float *mag);
 void imu_get_accel_derotated(float *accel);
+void imu_get_accel_derotated_yawless(float *accel);
 void imu_get_quaternions(float *q);
 void imu_get_calibration(float yaw, float * imu_cal);
 
