@@ -1098,7 +1098,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 					// inner PID:
 					float acc[3];
-					imu_get_accel_derotated(acc);
+					imu_get_accel_derotated_yawless(acc);
 					float erpm = mcpwm_foc_get_smooth_erpm();
 					// at low erpms the motor can be VERY choppy, so we gotta filter it
 					float measured_acceleration = acc[0] * 20;//last_measured_acceleration * 0.95 + (erpm - last_smooth_erpm) * 0.05;
@@ -1121,14 +1121,14 @@ static THD_FUNCTION(balance_thread, arg) {
 						(inner_kd * inner_derivative);
 
 					// limit output current
-					float amplimit = 50.0;
+					float amplimit = 30.0;
 					if (fabsf(inner_pid_output) > amplimit) {
 						limit_exceeded++;
 						inner_pid_output = amplimit * SIGN(inner_pid_output);
 					}
 					//requested_current = requested_current * 0.9 + inner_pid_output * 0.1;
-					//requested_current = biquad_process(inner_pid_output, &accel1_biquad);
-					requested_current = inner_pid_output;
+					requested_current = biquad_process(inner_pid_output, &accel1_biquad);
+					//requested_current = inner_pid_output;
 
 					// LOG 1000 samples once erpm exceeds threshold (Multi-ESC roll-steer erpm kp):
 					if (logidx < LOGBUFSIZE) {
@@ -1260,7 +1260,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					if (((fabsf(erpm) >= trig) && (fabsf(erpm) < trig+100)) || (logidx > 0)) {
 						logdelaycounter++;
 						float acc[3];
-						imu_get_accel_derotated(acc);
+						imu_get_accel_derotated_yawless(acc);
 						b0 += pitch_angle;
 						b1 += pid_value;
 						b2 += last_erpm;	// standard raw erpm
