@@ -773,20 +773,6 @@ void apply_turntilt(void){
 
 }
 
-float apply_deadzone(float error){
-	if(balance_conf.deadzone == 0){
-		return error;
-	}
-
-	if(error < balance_conf.deadzone && error > -balance_conf.deadzone){
-		return 0;
-	} else if(error > balance_conf.deadzone){
-		return error - balance_conf.deadzone;
-	} else {
-		return error + balance_conf.deadzone;
-	}
-}
-
 static void update_lights(void){
 	ride_state = new_ride_state;
 	switch (ride_state) {
@@ -828,14 +814,6 @@ void brake(void){
 	timeout_reset();
 	// Set current
 	mc_interface_set_brake_current(balance_conf.brake_current);
-	if(balance_conf.multi_esc){
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current_brake(msg->id, balance_conf.brake_current);
-			}
-		}
-	}
 	beep_off(true);
 	// we've stopped riding => turn the lights off
 	// TODO: Add delay (to help spot the vehicle after a crash?)
@@ -847,18 +825,7 @@ void set_current(float current, float yaw_current){
 	// Reset the timeout
 	timeout_reset();
 	// Set current
-	if(balance_conf.multi_esc){
-		mc_interface_set_current(current + yaw_current);
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current(msg->id, current - yaw_current);// Assume 2 motors, i don't know how to steer 3 anyways
-			}
-		}
-	} else {
-		mc_interface_set_current(current);
-	}
+	mc_interface_set_current(current);
 }
 
 void app_balance_stop(void) {
@@ -921,16 +888,6 @@ static THD_FUNCTION(balance_thread, arg) {
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
-		if(balance_conf.multi_esc){
-			avg_erpm = erpm;
-			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-				can_status_msg *msg = comm_can_get_status_msg_index(i);
-				if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-					avg_erpm += msg->rpm;
-				}
-			}
-			avg_erpm = avg_erpm/2;// Assume 2 motors, i don't know how to steer 3 anyways
-		}
 		adc1 = (((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG;
 #ifdef ADC_IND_EXT2
 		adc2 = (((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG;
