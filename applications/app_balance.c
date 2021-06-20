@@ -125,6 +125,7 @@ static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
+static float tiltback_constant, tiltback_erpmbased, tiltback_constant_erpm;
 static float torquetilt_brk_start_current, torquetilt_brk_delay;
 static float torquetilt_filtered_current, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
@@ -310,6 +311,18 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (disable_all_5_3_features) {
 		use_soft_start = false;
 		use_reverse_stop = false;
+	}
+
+	tiltback_constant = 0;
+	tiltback_erpmbased = 0;
+	tiltback_constant_erpm = 99999;
+	if (balance_conf.tiltback_constant != 0) {
+		// use erpm ending in "1" to indicate speed dependent tiltback
+		tiltback_constant = balance_conf.tiltback_constant;
+		tiltback_constant_erpm = balance_conf.tiltback_constant_erpm;
+		int tb = tiltback_constant_erpm / 10;
+		int tbrest = tiltback_constant_erpm - tb * 10;
+		tiltback_erpmbased = tiltback_constant / 10000;
 	}
 
 	switch (app_get_configuration()->shutdown_mode) {
@@ -592,13 +605,18 @@ void calculate_setpoint_target(void){
 			setpointAdjustmentType = REVERSESTOP;
 			reverse_total_erpm = 0;
 		}
-		else
-		if(balance_conf.tiltback_constant != 0 && abs_erpm > balance_conf.tiltback_constant_erpm){
-			// Nose angle adjustment
-			if(erpm > 0){
-				setpoint_target = balance_conf.tiltback_constant;
-			} else {
-				setpoint_target = -balance_conf.tiltback_constant;
+		else if(abs_erpm > tiltback_constant_erpm){
+			if (tiltback_erpmbased > 0) {
+				// Speed based nose angle adjustment
+				setpoint_target = tiltback_erpmbased * erpm;
+			}
+			else {
+				// Fixed nose angle adjustment
+				if(erpm > 0){
+					setpoint_target = tiltback_constant;
+				} else {
+					setpoint_target = -tiltback_constant;
+				}
 			}
 			setpointAdjustmentType = TILTBACK;
 			state = RUNNING_TILTBACK_CONSTANT;
