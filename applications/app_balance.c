@@ -146,7 +146,7 @@ static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
 static float acceleration, acceleration2, last_erpm;
-static float integral_max, integral_min;
+static float integral_max, integral_min, shedfactor;
 
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
 float exp_grunt_factor, exp_g_max, exp_g_min;
@@ -253,6 +253,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float angl_rest = booster_angle - angl;
 	if (angl_rest == 0.1)
 		booster_beep = 1;
+
+	shedfactor = balance_conf.yaw_kp;
+	// guardrails:
+	if (shedfactor > 1)
+		shedfactor = 0.98;
+	if (shedfactor < 0.5)
+		shedfactor = 0.95;
 
 	float kdf = balance_conf.kd;
 	int kdi = (int) kdf;
@@ -735,12 +742,29 @@ void apply_torquetilt(void){
 	else
 		expkp = 0;
 
-	if ((torquetilt_target == 0)  && (fabsf(integral) > 3000) && (abs_erpm < 2000) &&
-		(fabsf(torquetilt_filtered_current) < start_current)) {
-		// we are back to 0 ttt, current is small, yet integral windup is high:
-		// resort to brute force integral windup mitigation, shed 1% each cycle:
-		// but only at low speeds (below 4mph)
-		integral = integral * 0.99;
+	// Deal with integral windup
+	if (SIGN(integral) != SIGN(erpm)) { // integral windup after braking
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 3)) {
+			// we are back to 0 ttt, current is small, yet integral windup is high:
+			// resort to brute force integral windup mitigation, shed 1% each cycle:
+			// but only at low speeds (below 4mph)
+			integral = integral * shedfactor;
+		}
+	}
+	else {
+		// integral windup after acceleration
+		// we usually don't want to mess with integral windup after accelerating - that's what
+		// helps give the onewheel its soft brake feel!
+		// there's a few exceptions though:
+		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
+		// b) when going up a hill instantly followed by a steep decline - integral windup
+		//    will cause a delayed braking response, resulting in a taildrag
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 3) && (fabsf(erpm) < 1000)) {
+			// we are back to 0 ttt, current is small, yet integral windup is high:
+			// resort to brute force integral windup mitigation, shed 1% each cycle:
+			// but only at low speeds (below 4mph)
+			integral = integral * shedfactor;
+		}
 	}
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
