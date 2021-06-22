@@ -79,7 +79,6 @@ static mutex_t terminal_mutex;
 static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
 extern int log_balance_state;
-extern float adc1, adc2;
 
 extern float expacc, expavg, expaccmin, expaccmax, expki, expkd, expkp, expprop, expsetpoint, ttt;
 extern float exp_grunt_factor, exp_g_max, exp_g_min;
@@ -424,11 +423,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = log_balance_state; //current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
-			// most VESCs don't actually have temp sensors for individual mosfets
-			// For Onewheels, logging ADC values is much more useful:
 			buffer_append_float16(send_buffer, NTC_TEMP_MOS1(), 1e1, &ind);
-			buffer_append_float16(send_buffer, adc1, 1e2, &ind);	// NTC_TEMP_MOS2()
-			buffer_append_float16(send_buffer, adc2, 1e2, &ind);	// NTC_TEMP_MOS3()
+			buffer_append_float16(send_buffer, NTC_TEMP_MOS2(), 1e1, &ind);
+			buffer_append_float16(send_buffer, NTC_TEMP_MOS3(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 19)) {
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_vd(), 1e3, &ind);
