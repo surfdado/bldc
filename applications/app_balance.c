@@ -112,7 +112,7 @@ static float startup_step_size, tiltback_step_size, torquetilt_step_size, torque
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
 static float duty_cycle, abs_duty_cycle;
-static float erpm, abs_erpm, avg_erpm;
+static float erpm, abs_erpm;
 static float motor_current;
 static float motor_position;
 static float adc1, adc2;
@@ -132,7 +132,6 @@ static float turntilt_target, turntilt_interpolated;
 static int booster_beep = 0;
 static int booster_beeping = 0;
 static SetpointAdjustmentType setpointAdjustmentType;
-static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportional, yaw_pid_value, yaw_setpoint;
 static systime_t current_time, last_time, diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, softstart_timer;
 static float d_pt1_state, d_pt1_k;
@@ -145,7 +144,7 @@ static float reverse_total_erpm;
 static RideState ride_state, new_ride_state;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float autosuspend_timer, autosuspend_timeout;
-static float acceleration, acceleration2, last_erpm;
+static float acceleration, last_erpm;
 static float integral_max, integral_min, shedfactor;
 
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
@@ -246,7 +245,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	int ttf = (int) torquetilt_filter;
 	float ttf_rest = torquetilt_filter - ttf;
 	if (ttf_rest > 0.1)
-		torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
+	{}//torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
 
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
@@ -261,46 +260,23 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (shedfactor < 0.5)
 		shedfactor = 0.95;
 
-	float kdf = balance_conf.kd;
-	int kdi = (int) kdf;
-	float kd_rest = (kdf - kdi) * 1000;
-	int brake_pid_scaling = kd_rest;
-	int brake_kp_scaling = brake_pid_scaling / 100;
-	int brake_ki_scaling = (brake_pid_scaling - (brake_kp_scaling * 100)) / 10;
-	int brake_kd_scaling = brake_pid_scaling - (brake_kp_scaling * 100) - (brake_ki_scaling * 10);
-	if (brake_kp_scaling < 2) {
-		brake_kp_scaling = 10;
-		brake_ki_scaling = 10;
-		brake_kd_scaling = 10;
-	}		
-	if (brake_ki_scaling < 1)
-		brake_ki_scaling = 10;
-	if (brake_kd_scaling < 5)
-		brake_kd_scaling = 10;
-
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
 	kd_acc = fminf(balance_conf.kd, 1500);
-	kp_brk = fminf(kp_acc / 10.0 * brake_kp_scaling, 5);
-	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
-	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1200);
-
-	if (ki_brk == 0.005) {
-		beep_on(1);
-		chThdSleepMilliseconds(100);
-		beep_off(1);
-		chThdSleepMilliseconds(100);
-		beep_on(1);
-		chThdSleepMilliseconds(100);
-		beep_off(1);
-	}
+	// Disable asymmetric PIDs for now to be safe
+	kp_brk = kp_acc;
+	ki_brk = ki_acc;
+	kd_brk = kd_acc;
 
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
 	// 20 works well for me, higher reduces delay but increase noise
+	// 10 is a conservative default
 	float cutoff_freq = balance_conf.roll_steer_kp;
-	if (cutoff_freq < 3)
-		cutoff_freq = 3;
+	if (cutoff_freq < 10)
+		cutoff_freq = 10;
+	if (cutoff_freq > 30)
+		cutoff_freq = 30;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
 	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
 
@@ -310,8 +286,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		integral_min = (-1) * balance_conf.roll_steer_erpm_kp * 10000.0; // braking
 	}
 	else {
-		integral_max = 30000.0; // acceleration
-		integral_min = -15000.0; // braking
+		integral_max = 35000.0; // acceleration
+		integral_min = -20000.0; // braking
 	}
 
 	disable_all_5_3_features = (balance_conf.deadzone != 0);
@@ -360,8 +336,6 @@ void reset_vars(void){
 	last_proportional = 0;
 	last_pitch_angle = 0;
 	last_erpm = 0;
-	yaw_integral = 0;
-	yaw_last_proportional = 0;
 	d_pt1_state = 0;
 	// Set values for startup
 	setpoint = pitch_angle;
@@ -372,7 +346,6 @@ void reset_vars(void){
 	turntilt_target = 0;
 	turntilt_interpolated = 0;
 	setpointAdjustmentType = CENTERING;
-	yaw_setpoint = 0;
 	state = RUNNING;
 	current_time = 0;
 	last_time = 0;
@@ -864,7 +837,7 @@ void brake(void){
 	update_lights();
 }
 
-void set_current(float current, float yaw_current){
+void set_current(float current){
 	// Reset the timeout
 	timeout_reset();
 	// Set current
@@ -876,7 +849,7 @@ void app_balance_stop(void) {
 		chThdTerminate(app_thread);
 		chThdWait(app_thread);
 	}
-	set_current(0, 0);
+	set_current(0);
 }
 
 static THD_FUNCTION(balance_thread, arg) {
@@ -921,13 +894,11 @@ static THD_FUNCTION(balance_thread, arg) {
 		sampleIdx = 0;*/
 
 		acceleration = biquad_filter(erpm - last_erpm);
-		//acceleration2 = biquad2_filter(acc[0]);
 		last_erpm = erpm;
 
 		// For logging only:
 		expacc = acceleration;
 		expki = integral;
-		//expkd = acceleration2;
 		//expaccmin = fminf(expaccmin, acceleration);
 		//expaccmax = fmaxf(expaccmax, acceleration);
 
@@ -1130,7 +1101,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Output to motor
-				set_current(pid_value, yaw_pid_value);
+				set_current(pid_value);
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
