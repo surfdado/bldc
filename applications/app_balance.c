@@ -329,7 +329,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		tiltback_constant_erpm = balance_conf.tiltback_constant_erpm;
 		int tb = tiltback_constant_erpm / 10;
 		int tbrest = tiltback_constant_erpm - tb * 10;
-		tiltback_erpmbased = tiltback_constant / 10000;
+		if (tbrest == 1)
+			tiltback_erpmbased = tiltback_constant / 10000;
 	}
 
 	switch (app_get_configuration()->shutdown_mode) {
