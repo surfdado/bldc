@@ -32,6 +32,7 @@
 #include "datatypes.h"
 #include "comm_can.h"
 #include "buzzer.h"
+#include "mcpwm_foc.h"
 
 
 #include <math.h>
@@ -840,21 +841,10 @@ static THD_FUNCTION(balance_thread, arg) {
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
 
-		//if (sampleIdx == 0) {
-		//	OneKSamples1[0] = 999.999;
-		//	OneKSamples2[0] = 999.999;
-		//	sampleIdx++;
-		//}
-		float acc[3];
-		imu_get_accel(acc);
-		/*OneKSamples1[sampleIdx] = motor_current;
-		OneKSamples2[sampleIdx] = acc[0];
-		sampleIdx++;
-		if (sampleIdx == 100)
-		sampleIdx = 0;*/
-
-		acceleration = biquad_filter(erpm - last_erpm);
-		last_erpm = erpm;
+		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
+		acceleration = biquad_filter(smooth_erpm - last_erpm);
+		acceleration = biquad2_filter(acceleration);
+		last_erpm = smooth_erpm;
 
 		// For logging only:
 		expacc = acceleration;
