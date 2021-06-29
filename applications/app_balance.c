@@ -263,10 +263,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float cutoff_freq = balance_conf.roll_steer_kp;
 	if (cutoff_freq < 10)
 		cutoff_freq = 10;
-	if (cutoff_freq > 30)
-		cutoff_freq = 30;
+	if (cutoff_freq > 100)
+		cutoff_freq = 100;
 	biquad_config(cutoff_freq / ((float)balance_conf.hertz));
-	biquad2_config(cutoff_freq / ((float)balance_conf.hertz));
+	biquad2_config(50 / ((float)balance_conf.hertz));
 
 	// Limit integral buildup, hard coded for now
 	if (balance_conf.roll_steer_erpm_kp >= 1) {
