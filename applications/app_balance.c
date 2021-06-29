@@ -220,7 +220,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	else
 		use_reverse_stop = false;
 
-	torquetilt_step_size_down = torquetilt_step_size;
+	torquetilt_step_size_down = torquetilt_step_size / 4;
 	// to avoid oscillations:
 	/*if (balance_conf.torquetilt_speed > 2.5)
 		torquetilt_step_size_down /= 2;
@@ -702,12 +702,19 @@ void apply_torquetilt(void){
 		}
 	}
 
-	if(fabsf(torquetilt_target - torquetilt_interpolated) < torquetilt_step_size){
+	float tt_step_size;
+	if (fabsf(torquetilt_target) > fabsf(torquetilt_interpolated)){
+		tt_step_size = torquetilt_step_size;
+	}else{
+		tt_step_size = torquetilt_step_size_down;
+	}
+
+	if(fabsf(torquetilt_target - torquetilt_interpolated) < tt_step_size){
 		torquetilt_interpolated = torquetilt_target;
 	}else if (torquetilt_target - torquetilt_interpolated > 0){
-		torquetilt_interpolated += torquetilt_step_size_down;
+		torquetilt_interpolated += tt_step_size;
 	}else{
-		torquetilt_interpolated -= torquetilt_step_size;
+		torquetilt_interpolated -= tt_step_size;
 	}
 	setpoint += torquetilt_interpolated;
 }
