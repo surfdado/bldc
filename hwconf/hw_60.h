@@ -246,6 +246,11 @@
 #define HW_ICU_GPIO				GPIOB
 #define HW_ICU_PIN				6
 
+// HW60 uses servo pin for buzzer
+#define HAS_EXT_BUZZER			1
+#define EXT_BUZZER_ON()			palSetPad(HW_ICU_GPIO, HW_ICU_PIN)
+#define EXT_BUZZER_OFF()		palClearPad(HW_ICU_GPIO, HW_ICU_PIN)
+
 // I2C Peripheral
 #define HW_I2C_DEV				I2CD2
 #define HW_I2C_GPIO_AF			GPIO_AF_I2C2
