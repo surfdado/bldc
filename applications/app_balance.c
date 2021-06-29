@@ -57,11 +57,6 @@ typedef enum {
 
 
 typedef enum {
-	BRAKE_NORMAL,
-	BRAKE_DOWNHILL
-} BrakeMode;
-
-typedef enum {
 	CENTERING = 0,
 	TILTBACK,
 	REVERSESTOP
@@ -126,7 +121,7 @@ static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float tiltback_constant, tiltback_erpmbased, tiltback_constant_erpm;
-static float torquetilt_brk_start_current, torquetilt_brk_delay;
+static float torquetilt_brk_start_current;
 static float torquetilt_filtered_current, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
 static int booster_beep = 0;
@@ -238,14 +233,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		torquetilt_brk_start_current = sc_rest * torquetilt_start_current;
 	else
 		torquetilt_brk_start_current = torquetilt_start_current;
-
-	torquetilt_brk_delay = 0;
-
-	float torquetilt_filter = balance_conf.torquetilt_filter * 100;
-	int ttf = (int) torquetilt_filter;
-	float ttf_rest = torquetilt_filter - ttf;
-	if (ttf_rest > 0.1)
-	{}//torquetilt_brk_delay = ttf_rest * 10 * 1000;	// convert to ms
 
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
@@ -644,9 +631,6 @@ void calculate_setpoint_interpolated(void){
 	}
 }
 
-static float brake_timer;
-static BrakeMode brake_mode = BRAKE_NORMAL;
-
 void apply_torquetilt(void){
 	float start_current = balance_conf.torquetilt_start_current;
 	if (start_current == 0)
@@ -658,30 +642,6 @@ void apply_torquetilt(void){
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
 		start_current = torquetilt_brk_start_current;
-
-		if (brake_mode == BRAKE_NORMAL) {
-			if (ST2MS(current_time - brake_timer) > torquetilt_brk_delay) {
-				// enable downhill mode after a delay
-				brake_mode = BRAKE_DOWNHILL;
-				if (abs_erpm > 500)
-				{}//beep_alert(1, 1);
-			}
-			else {
-				// Only a sustained current above the threshold will trigger downhill mode 
-				if (fabsf(torquetilt_filtered_current) < start_current) {
-					brake_timer = current_time;
-				}
-				// Never Torque Tilt in BRAKE_NORMAL mode, to allow tail drags etc
-				torquetilt_filtered_current = 0;
-			}
-		}
-	}
-	else {
-		// cruising / accelerating - the only way to exit downhill mode
-		if ((brake_mode == BRAKE_DOWNHILL) && (abs_erpm > 500))
-		{}//beep_alert(1, 0);
-		brake_timer = current_time;
-		brake_mode = BRAKE_NORMAL;
 	}
 
 	float torquetilt_target;
