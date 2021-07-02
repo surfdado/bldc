@@ -144,7 +144,7 @@ static float acceleration, last_erpm;
 static float integral_max, integral_min, shedfactor;
 
 float expacc, expki, expkd, expkp, expprop, expsetpoint, ttt;
-float exp_grunt_factor, exp_g_max, exp_g_min;
+static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
 
 static float bq_z1, bq_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
@@ -251,9 +251,14 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	shedfactor = balance_conf.yaw_kp;
 	// guardrails:
 	if (shedfactor > 1)
-		shedfactor = 0.98;
+		shedfactor = 0.99;
 	if (shedfactor < 0.5)
-		shedfactor = 0.95;
+		shedfactor = 0.98;
+
+	// minimum aggregate grunt to start torque tilt
+	grunt_threshold = balance_conf.yaw_kd;
+	if (grunt_threshold < 10)
+		grunt_threshold = 50;
 
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
@@ -369,14 +374,15 @@ void reset_vars(void){
 		}
 	}
 
-	exp_g_max = 0;
-	exp_g_min = 0;
 	pid_value = 0;
 	// biquad filter for acceleration:
 	bq_z1 = 0;
 	bq_z2 = 0;
 	bq2_z1 = 0;
 	bq2_z2 = 0;
+
+	grunt_aggregate = 0;
+	grunt_filtered = 0;
 }
 
 float app_balance_get_pid_output(void) {
@@ -653,24 +659,33 @@ void apply_torquetilt(void){
 	}
 
 	float torquetilt_target;
-	float torque_efficiency = (acceleration * 50.0) / torquetilt_filtered_current;
-	if (torque_efficiency < 1.5) { // magic ratio
+	float accel = acceleration;
+	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
+	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
+		accel = SIGN(torquetilt_filtered_current) * 0.05;
+	// grunt factor is always positive!
+	grunt_factor = fminf(torquetilt_filtered_current / (accel * 50.0), 20);
+	grunt_filtered = grunt_filtered * 0.8 + grunt_factor * 0.2;
+	if (grunt_filtered > 1)
+		grunt_aggregate += grunt_filtered;
+	else
+		grunt_aggregate /= 2;
+
+	if (grunt_aggregate > grunt_threshold) {
+		/*float*/ atr_intensity = 1;	// this can be a local variable ultimately
+		if (grunt_filtered < 5)
+			atr_intensity = (grunt_filtered + 3) / 8;
+
 		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 		// Finally multiply it by sign motor current to get directionality back
-		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current) * atr_intensity;
 	}
 	else {
 		// If the magic ratio is > 1 then we must be just accelerating. No TT here!!
 		torquetilt_target = 0;
 	}
 	ttt = torquetilt_target;
-	float accel = acceleration;
-	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
-		accel = SIGN(torquetilt_filtered_current) * 0.1;
-	exp_grunt_factor = fmaxf(fminf(torquetilt_filtered_current / (accel * 50.0), 20), -20);
-	exp_g_max = fmaxf(exp_grunt_factor, exp_g_max);
-	exp_g_min = fminf(exp_grunt_factor, exp_g_min);
 
 	// don't get the board too "excited", don't let the nose rise much above 0 ;)
 	float max_tilt = balance_conf.torquetilt_angle_limit / 4;
