@@ -701,10 +701,10 @@ void apply_torquetilt(void){
 
 	// Deal with integral windup
 	if (SIGN(integral) != SIGN(erpm)) { // integral windup after braking
-		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 3)) {
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 2)) {
 			// we are back to 0 ttt, current is small, yet integral windup is high:
 			// resort to brute force integral windup mitigation, shed 1% each cycle:
-			// but only at low speeds (below 4mph)
+			// at any speeds
 			integral = integral * shedfactor;
 		}
 	}
@@ -716,11 +716,18 @@ void apply_torquetilt(void){
 		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
 		// b) when going up a hill instantly followed by a steep decline - integral windup
 		//    will cause a delayed braking response, resulting in a taildrag
-		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 3) && (fabsf(erpm) < 1000)) {
-			// we are back to 0 ttt, current is small, yet integral windup is high:
-			// resort to brute force integral windup mitigation, shed 1% each cycle:
-			// but only at low speeds (below 4mph)
-			integral = integral * shedfactor;
+
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000)) {
+			// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
+			if ((SIGN(pitch_angle) == SIGN(erpm)) && (fabsf(erpm) < 1000)) {
+				// we are back to 0 ttt, current is small, yet integral windup is high:
+				// resort to brute force integral windup mitigation, shed 1% each cycle:
+				// but only at low speeds (below 4mph)
+				integral *= shedfactor;
+				torquetilt_interpolated *= shedfactor;
+			}
+			// This here is for (b)
+			// ???
 		}
 	}
 
