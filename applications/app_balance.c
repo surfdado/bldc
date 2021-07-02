@@ -196,7 +196,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	}
 	startup_step_size = balance_conf.startup_speed / balance_conf.hertz;
 	tiltback_step_size = balance_conf.tiltback_speed / balance_conf.hertz;
-	torquetilt_step_size = balance_conf.torquetilt_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	reverse_stop_step_size = 100.0 / balance_conf.hertz;
 	use_soft_start = (balance_conf.startup_speed < 10);
@@ -205,6 +204,21 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	int fullswitch_delay = balance_conf.fault_delay_switch_full / 10;
 	int delay_rest = balance_conf.fault_delay_switch_full - (fullswitch_delay * 10);
 	allow_high_speed_full_switch_faults = (delay_rest != 1);
+
+	torquetilt_step_size = balance_conf.torquetilt_speed;
+	int tss = torquetilt_step_size;
+	float ts_rest = torquetilt_step_size - tss;
+	if (torquetilt_step_size > 5) {
+		torquetilt_step_size -= ts_rest;
+		if (ts_rest < 0.01)
+			ts_rest = 1;
+		torquetilt_step_size_down = torquetilt_step_size * ts_rest;
+	}
+	else
+		torquetilt_step_size_down = torquetilt_step_size;
+
+	torquetilt_step_size /= balance_conf.hertz;
+	torquetilt_step_size_down /= balance_conf.hertz;
 
 	float startup_speed = balance_conf.startup_speed;
 	int ss = (int) startup_speed;
@@ -219,13 +233,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	}
 	else
 		use_reverse_stop = false;
-
-	torquetilt_step_size_down = torquetilt_step_size / 4;
-	// to avoid oscillations:
-	/*if (balance_conf.torquetilt_speed > 2.5)
-		torquetilt_step_size_down /= 2;
-	else if (balance_conf.torquetilt_speed > 1.5)
-	torquetilt_step_size_down /= 1.5;*/
 
 	float torquetilt_start_current = balance_conf.torquetilt_start_current;
 	int sc = (int) torquetilt_start_current;
