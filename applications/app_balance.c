@@ -59,7 +59,8 @@ typedef enum {
 	TILTBACK_DUTY,
 	TILTBACK_HV,
 	TILTBACK_LV,
-	TILTBACK_NONE
+	TILTBACK_NONE,
+	REVERSESTOP
 } SetpointAdjustmentType;
 
 typedef enum {
@@ -92,6 +93,10 @@ static float startup_step_size;
 static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_size, tiltback_return_step_size;
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
+
+// Feature: Reverse Stop
+static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
+static bool use_reverse_stop;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -184,6 +189,18 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	torquetilt_off_step_size = balance_conf.torquetilt_off_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	noseangling_step_size = balance_conf.noseangling_speed / balance_conf.hertz;
+
+	// Feature: Reverse Stop (ON if startup_speed ends in .1)
+	reverse_stop_step_size = 100.0 / balance_conf.hertz;
+	float startup_speed = balance_conf.startup_speed;
+	int ss = (int) startup_speed;
+	float ss_rest = startup_speed - ss;
+	if ((ss_rest > 0.09) && (ss_rest < 0.11)) {
+		use_reverse_stop = true;
+		reverse_tolerance = 50000;
+	}
+	else
+		use_reverse_stop = false;
 
 	// Init Filters
 	if(balance_conf.loop_time_filter > 0){
@@ -335,6 +352,8 @@ static float get_setpoint_adjustment_step_size(void){
 			return tiltback_lv_step_size;
 		case (TILTBACK_NONE):
 			return tiltback_return_step_size;
+		case (REVERSESTOP):
+			return reverse_stop_step_size;
 		default:
 			;
 	}
@@ -352,6 +371,14 @@ static bool check_faults(bool ignoreTimers){
 		}
 	} else {
 		fault_switch_timer = current_time;
+	}
+
+	// Feature: Reverse-Stop - Taking your foot off while reversing? Ignore delays
+	if(setpointAdjustmentType == REVERSESTOP){
+		if ((fabsf(pitch_angle) > 15) || (switch_state == OFF)) {
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
 	}
 
 	// Switch partially open and stopped
@@ -401,6 +428,23 @@ static void calculate_setpoint_target(void){
 	if(setpointAdjustmentType == CENTERING && setpoint_target_interpolated != setpoint_target){
 		// Ignore tiltback during centering sequence
 		state = RUNNING;
+	}else if (setpointAdjustmentType == REVERSESTOP) {
+		// accumalete erpms:
+		reverse_total_erpm += erpm;
+		if (fabsf(reverse_total_erpm) > reverse_tolerance) {
+			// tilt down by 10 degrees after 50k aggregate erpm
+			setpoint_target = 10 * (fabsf(reverse_total_erpm)-reverse_tolerance) / 50000;
+		}
+		else {
+			if (fabsf(reverse_total_erpm) <= reverse_tolerance/2) {
+				if (erpm >= 0){
+					setpointAdjustmentType = TILTBACK_NONE;
+					reverse_total_erpm = 0;
+					setpoint_target = 0;
+					integral = 0;
+				}
+			}
+		}
 	}else if(abs_duty_cycle > balance_conf.tiltback_duty){
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_duty_angle;
@@ -426,7 +470,14 @@ static void calculate_setpoint_target(void){
 		setpointAdjustmentType = TILTBACK_LV;
 		state = RUNNING_TILTBACK_LOW_VOLTAGE;
 	}else{
-		setpointAdjustmentType = TILTBACK_NONE;
+		// Normal running
+		if (use_reverse_stop && (erpm < 0)) {
+			setpointAdjustmentType = REVERSESTOP;
+			reverse_total_erpm = 0;
+		}
+		else {
+			setpointAdjustmentType = TILTBACK_NONE;
+		}
 		setpoint_target = 0;
 		state = RUNNING;
 	}
@@ -730,6 +781,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = biquad_process(&d_biquad_highpass, derivative);
 				}
 
+				if (setpointAdjustmentType == REVERSESTOP) {
+					pid_value = (2 * proportional) + (balance_conf.kd * derivative);
+					integral = 0;
+				}
 				pid_value = (balance_conf.kp * proportional) + (balance_conf.ki * integral) + (balance_conf.kd * derivative);
 
 				last_proportional = proportional;
