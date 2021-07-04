@@ -99,6 +99,11 @@ static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
 static systime_t reverse_timer;
 static bool use_reverse_stop;
 
+// Feature: Soft Start
+#define SOFTSTART_GRACE_PERIOD_MS 100
+static systime_t softstart_timer;
+static bool use_soft_start;
+
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
@@ -109,7 +114,7 @@ static float motor_position;
 static float adc1, adc2;
 static SwitchState switch_state;
 
-// Rumtime state values
+// Runtime state values
 static BalanceState state;
 static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
@@ -124,6 +129,7 @@ static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportion
 static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
+static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float d_pt1_lowpass_state, d_pt1_lowpass_k, d_pt1_highpass_state, d_pt1_highpass_k;
 static Biquad d_biquad_lowpass, d_biquad_highpass;
 static float motor_timeout;
@@ -202,6 +208,18 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	}
 	else
 		use_reverse_stop = false;
+
+	// Feature: Soft Start
+	use_soft_start = (balance_conf.startup_speed < 10);
+
+	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
+	kp_acc = fminf(balance_conf.kp, 10);
+	ki_acc = fminf(balance_conf.ki, 0.01);
+	kd_acc = fminf(balance_conf.kd, 1500);
+	// Disable asymmetric PIDs for now to be safe
+	kp_brk = kp_acc;
+	ki_brk = ki_acc;
+	kd_brk = kd_acc;
 
 	// Init Filters
 	if(balance_conf.loop_time_filter > 0){
@@ -339,6 +357,20 @@ static void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	brake_timeout = 0;
+
+	if (use_soft_start) {
+		// Soft start
+		// minimum values (even 0,0,0 is possible) for soft start:
+		kp = 1;
+		ki = 0;
+		kd = 100;
+	}
+	else {
+		// Normal start / quick-start
+		kp = kp_acc / 2;
+		ki = ki_acc / 2;
+		kd = kd_acc / 2;
+	}
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -440,9 +472,19 @@ static bool check_faults(bool ignoreTimers){
 }
 
 static void calculate_setpoint_target(void){
-	if(setpointAdjustmentType == CENTERING && setpoint_target_interpolated != setpoint_target){
-		// Ignore tiltback during centering sequence
-		state = RUNNING;
+	if(setpointAdjustmentType == CENTERING) {
+		if (setpoint_target_interpolated != setpoint_target){
+			// Ignore tiltback during centering sequence
+			state = RUNNING;
+			softstart_timer = current_time;
+		}
+		else if (ST2MS(current_time - softstart_timer) > SOFTSTART_GRACE_PERIOD_MS){
+			// After a short delay transition to normal riding
+			setpointAdjustmentType = TILTBACK_NONE;
+		}
+		else if (use_soft_start == false){
+			setpointAdjustmentType = TILTBACK_NONE;
+		}
 	}else if (setpointAdjustmentType == REVERSESTOP) {
 		// accumalete erpms:
 		reverse_total_erpm += erpm;
@@ -769,9 +811,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				apply_noseangling();
-				apply_torquetilt();
-				apply_turntilt();
+				if (setpointAdjustmentType == TILTBACK) {
+					apply_noseangling();
+					apply_torquetilt();
+					apply_turntilt();
+				}
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
@@ -797,24 +841,55 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = biquad_process(&d_biquad_highpass, derivative);
 				}
 
+				// Switch between breaking PIDs and acceleration PIDs
+				float kp_target, ki_target, kd_target;
+				if (SIGN(pid_value) == SIGN(erpm)) {
+					// braking
+					kp_target = kp_brk;
+					ki_target = ki_brk;
+					kd_target = kd_brk;
+				}
+				else {
+					// acceleration
+					kp_target = kp_acc;
+					ki_target = ki_acc;
+					kd_target = kd_acc;
+				}
 				if (setpointAdjustmentType == REVERSESTOP) {
-					pid_value = (2 * proportional) + (balance_conf.kd * derivative);
+					kp_target = 2;
 					integral = 0;
 				}
-				pid_value = (balance_conf.kp * proportional) + (balance_conf.ki * integral) + (balance_conf.kd * derivative);
+
+				// Use filtering to avoid sudden changes in PID values
+				kp = kp * 0.997 + kp_target * 0.003;
+				ki = ki * 0.997 + ki_target * 0.003;
+				kd = kd * 0.997 + kd_target * 0.003;
+
+				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
+					// soft-start
+					float pid_target = (kp * proportional) + (kd * derivative);
+					pid_value = 0.05 * pid_target + 0.95 * pid_value;
+					// once centering is done, start integral component from 0
+					integral = 0;
+					ki = 0;
+				}
+				else {
+					pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
+				}
 
 				last_proportional = proportional;
 
 				// Apply Booster
-				abs_proportional = fabsf(proportional);
-				if(abs_proportional > balance_conf.booster_angle){
-					if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
-						pid_value += (balance_conf.booster_current * SIGN(proportional)) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
-					}else{
-						pid_value += balance_conf.booster_current * SIGN(proportional);
+				if (setpointAdjustmentType == TILTBACK) {
+					abs_proportional = fabsf(proportional);
+					if(abs_proportional > balance_conf.booster_angle){
+						if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
+							pid_value += (balance_conf.booster_current * SIGN(proportional)) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
+						}else{
+							pid_value += balance_conf.booster_current * SIGN(proportional);
+						}
 					}
 				}
-
 
 				if(balance_conf.multi_esc){
 					// Calculate setpoint
