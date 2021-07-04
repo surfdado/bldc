@@ -514,13 +514,12 @@ void calculate_setpoint_target(void){
 			// Ignore tiltback during centering sequence
 			state = RUNNING;
 			softstart_timer = current_time;
-
-			// disable soft start if startup speed is 10 or greater
-			if (use_soft_start == false)
-				setpointAdjustmentType = TILTBACK;
 		}
 		else if (ST2MS(current_time - softstart_timer) > SOFTSTART_GRACE_PERIOD_MS){
 			// After a short delay transition to normal riding
+			setpointAdjustmentType = TILTBACK;
+		}
+		else if (use_soft_start == false){
 			setpointAdjustmentType = TILTBACK;
 		}
 	}
