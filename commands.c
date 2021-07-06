@@ -79,6 +79,7 @@ static mutex_t send_buffer_mutex;
 static mutex_t terminal_mutex;
 static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
+extern int log_balance_state;
 
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
@@ -418,7 +419,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				current_controller_id = utils_second_motor_id();
 			}
 #endif
-			send_buffer[ind++] = current_controller_id;
+			send_buffer[ind++] = log_balance_state; //current_controller_id;
+			//send_buffer[ind++] = current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
 			buffer_append_float16(send_buffer, NTC_TEMP_MOS1(), 1e1, &ind);
@@ -875,7 +877,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				current_controller_id = utils_second_motor_id();
 			}
 #endif
-			send_buffer[ind++] = current_controller_id;
+			send_buffer[ind++] = log_balance_state; //current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
 			send_buffer[ind++] = val.num_vescs;
