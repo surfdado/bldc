@@ -214,6 +214,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Feature: Soft Start
 	use_soft_start = (balance_conf.startup_speed < 10);
 
+	// if the full switch delay ends in 1, we don't allow high speed full switch faults
+	int fullswitch_delay = balance_conf.fault_delay_switch_full / 10;
+	int delay_rest = balance_conf.fault_delay_switch_full - (fullswitch_delay * 10);
+
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
@@ -402,6 +406,11 @@ static bool check_faults(bool ignoreTimers){
 	// Switch fully open
 	if(switch_state == OFF){
 		if(ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_full || ignoreTimers){
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		else if ((abs_erpm < balance_conf.fault_adc_half_erpm) && (fabsf(pitch_angle) > 15)) {
+			// QUICK STOP
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
