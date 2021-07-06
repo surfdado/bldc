@@ -93,6 +93,7 @@ static float startup_step_size;
 static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_size, tiltback_return_step_size;
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
+static bool allow_high_speed_full_switch_faults;
 
 // Feature: Reverse Stop
 static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
@@ -217,6 +218,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// if the full switch delay ends in 1, we don't allow high speed full switch faults
 	int fullswitch_delay = balance_conf.fault_delay_switch_full / 10;
 	int delay_rest = balance_conf.fault_delay_switch_full - (fullswitch_delay * 10);
+	allow_high_speed_full_switch_faults = (delay_rest != 1);
 
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
@@ -409,6 +411,10 @@ static bool check_faults(bool ignoreTimers){
 			// QUICK STOP
 			state = FAULT_SWITCH_FULL;
 			return true;
+		}
+		else if ((abs_erpm > 3000) && !allow_high_speed_full_switch_faults) {
+			// above 3k erpm (~7mph on a 11 inch onewheel tire) don't ever produce switch faults!
+			fault_switch_timer = current_time;
 		}
 	} else {
 		fault_switch_timer = current_time;
