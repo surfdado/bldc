@@ -105,6 +105,10 @@ static bool use_reverse_stop;
 static systime_t softstart_timer;
 static bool use_soft_start;
 
+// Feature: Adaptive Torque Response
+static float acceleration, last_erpm, shedfactor;
+static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
+
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
@@ -124,8 +128,8 @@ static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float noseangling_interpolated;
-static float torquetilt_filtered_current, torquetilt_target, torquetilt_interpolated;
-static Biquad torquetilt_current_biquad;
+static float torquetilt_filtered_current, torquetilt_interpolated;
+static Biquad torquetilt_current_biquad, accel_biquad1, accel_biquad2;
 static float turntilt_target, turntilt_interpolated;
 static SetpointAdjustmentType setpointAdjustmentType;
 static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportional, yaw_pid_value, yaw_setpoint;
@@ -220,6 +224,19 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	int delay_rest = balance_conf.fault_delay_switch_full - (fullswitch_delay * 10);
 	allow_high_speed_full_switch_faults = (delay_rest != 1);
 
+	// Feature: ATR
+	shedfactor = balance_conf.yaw_kp;
+	// guardrails:
+	if (shedfactor > 1)
+		shedfactor = 0.99;
+	if (shedfactor < 0.5)
+		shedfactor = 0.98;
+
+	// minimum aggregate grunt to start torque tilt
+	grunt_threshold = balance_conf.yaw_kd;
+	if (grunt_threshold < 10)
+		grunt_threshold = 50;
+
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
@@ -255,6 +272,17 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 	}
+
+	// Feature: ATR
+	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
+	float cutoff_freq = balance_conf.roll_steer_kp;
+	if (cutoff_freq < 10)
+		cutoff_freq = 10;
+	if (cutoff_freq > 100)
+		cutoff_freq = 100;
+	biquad_config(&accel_biquad1, BQ_LOWPASS, cutoff_freq / ((float)balance_conf.hertz));
+	// 2nd biquad filter @50Hz (don't ask me why this works better than a single filter)
+	biquad_config(&accel_biquad2, BQ_LOWPASS, 50 / ((float)balance_conf.hertz));
 
 	// Variable nose angle adjustment / tiltback (setting is per 1000erpm, convert to per erpm)
 	tiltback_variable = balance_conf.tiltback_variable / 1000;
@@ -353,7 +381,6 @@ static void reset_vars(void){
 	setpoint_target_interpolated = pitch_angle;
 	setpoint_target = 0;
 	noseangling_interpolated = 0;
-	torquetilt_target = 0;
 	torquetilt_interpolated = 0;
 	torquetilt_filtered_current = 0;
 	biquad_reset(&torquetilt_current_biquad);
@@ -366,6 +393,13 @@ static void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	brake_timeout = 0;
+
+	// ATR:
+	biquad_reset(&accel_biquad1);
+	biquad_reset(&accel_biquad2);
+	grunt_aggregate = 0;
+	grunt_filtered = 0;
+	pid_value = 0;
 
 	if (use_soft_start) {
 		// Soft start
@@ -598,6 +632,11 @@ static void apply_noseangling(void){
 }
 
 static void apply_torquetilt(void){
+	// Skip torque tilt logic if start current is 0
+	float start_current = balance_conf.torquetilt_start_current;
+	if (start_current == 0)
+		return;
+
 	// Filter current (Biquad)
 	if(balance_conf.torquetilt_filter > 0){
 		torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
@@ -605,12 +644,80 @@ static void apply_torquetilt(void){
 		torquetilt_filtered_current  = motor_current;
 	}
 
+	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
+		// current is negative, so we are braking or going downhill
+		//start_current = torquetilt_brk_start_current;
+	}
 
-	// Wat is this line O_o
-	// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
-	// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
-	// Finally multiply it by sign motor current to get directionality back
-	torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - balance_conf.torquetilt_start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	// grunt is a measure of how much we're struggling to produce acceleration
+	float torquetilt_target;
+	float accel = acceleration;
+	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
+	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
+		accel = SIGN(torquetilt_filtered_current) * 0.05;
+	// grunt factor is always positive!
+	grunt_factor = fminf(torquetilt_filtered_current / (accel * 50.0), 20);
+	grunt_filtered = grunt_filtered * 0.8 + grunt_factor * 0.2;
+	if (grunt_filtered > 1)
+		grunt_aggregate += grunt_filtered;
+	else
+		grunt_aggregate /= 2;
+
+	if (grunt_aggregate > grunt_threshold) {
+		/*float*/ atr_intensity = 1;	// this can be a local variable ultimately
+		if (grunt_filtered < 5)
+			atr_intensity = (grunt_filtered + 3) / 8;
+
+		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
+		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
+		// Finally multiply it by sign motor current to get directionality back
+		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - balance_conf.torquetilt_start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+	}
+	else {
+		// If the aggregate grunt is below the ratio then we must be just accelerating. No TT here!!
+		torquetilt_target = 0;
+	}
+	//ttt = torquetilt_target;
+
+	// don't get the board too "excited", don't let the nose rise much above 0 ;)
+	float max_tilt = balance_conf.torquetilt_angle_limit / 4;
+	bool nose_is_up = (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target));
+	float actual_tilt = fabsf(last_proportional - torquetilt_interpolated);
+	if (nose_is_up && (fabsf(torquetilt_target) > 0) && (actual_tilt > max_tilt)) {
+		torquetilt_target = torquetilt_target - SIGN(torquetilt_target) * actual_tilt * 0.5;
+	}
+
+	// Deal with integral windup
+	if (SIGN(integral) != SIGN(erpm)) { // integral windup after braking
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 2)) {
+			// we are back to 0 ttt, current is small, yet integral windup is high:
+			// resort to brute force integral windup mitigation, shed 1% each cycle:
+			// at any speeds
+			integral = integral * shedfactor;
+		}
+	}
+	else {
+		// integral windup after acceleration
+		// we usually don't want to mess with integral windup after accelerating - that's what
+		// helps give the onewheel its soft brake feel!
+		// there's a few exceptions though:
+		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
+		// b) when going up a hill instantly followed by a steep decline - integral windup
+		//    will cause a delayed braking response, resulting in a taildrag
+
+		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000)) {
+			// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
+			if ((SIGN(pitch_angle) == SIGN(erpm)) && (fabsf(erpm) < 1000)) {
+				// we are back to 0 ttt, current is small, yet integral windup is high:
+				// resort to brute force integral windup mitigation, shed 1% each cycle:
+				// but only at low speeds (below 4mph)
+				integral *= shedfactor;
+				torquetilt_interpolated *= shedfactor;
+			}
+			// This here is for (b)
+			// ???
+		}
+	}
 
 	float step_size;
 	if((torquetilt_interpolated - torquetilt_target > 0 && torquetilt_target > 0) || (torquetilt_interpolated - torquetilt_target < 0 && torquetilt_target < 0)){
@@ -762,6 +869,11 @@ static THD_FUNCTION(balance_thread, arg) {
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
+
+		acceleration = biquad_process(&accel_biquad1, erpm - last_erpm);
+		acceleration = biquad_process(&accel_biquad2, acceleration);
+		last_erpm = erpm;//smooth_erpm;
+
 		if(balance_conf.multi_esc){
 			avg_erpm = erpm;
 			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
