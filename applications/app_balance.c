@@ -116,6 +116,8 @@ static SwitchState switch_state;
 
 // Runtime state values
 static BalanceState state;
+int log_balance_state; // not static so we can log it
+
 static float proportional, integral, derivative;
 static float last_proportional, abs_proportional;
 static float pid_value;
@@ -264,6 +266,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 void app_balance_start(void) {
 	// First start only, override state to startup
 	state = STARTUP;
+	log_balance_state = state;
 	// Register terminal commands
 	terminal_register_command_callback(
 		"app_balance_render",
@@ -801,6 +804,7 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (RUNNING_TILTBACK_DUTY):
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
+				log_balance_state = state + 100 * setpointAdjustmentType;
 
 				// Check for faults
 				if(check_faults(false)){
@@ -924,6 +928,9 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
 			case (FAULT_STARTUP):
+				if (log_balance_state != FAULT_DUTY)
+					log_balance_state = state;
+
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
 					reset_vars();
@@ -933,6 +940,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				brake();
 				break;
 			case (FAULT_DUTY):
+				log_balance_state = FAULT_DUTY;
 				// We need another fault to clear duty fault.
 				// Otherwise duty fault will clear itself as soon as motor pauses, then motor will spool up again.
 				// Rendering this fault useless.
