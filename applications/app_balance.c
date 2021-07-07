@@ -32,6 +32,7 @@
 #include "comm_can.h"
 #include "terminal.h"
 #include "mcpwm_foc.h"
+#include "buzzer.h"
 
 
 #include <math.h>
@@ -577,6 +578,7 @@ static void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK_HV;
 		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
+		beep_alert(3, 0);	// Triple-beep
 	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_lv){
 		if(erpm > 0){
 			setpoint_target = balance_conf.tiltback_lv_angle;
@@ -585,6 +587,7 @@ static void calculate_setpoint_target(void){
 		}
 		setpointAdjustmentType = TILTBACK_LV;
 		state = RUNNING_TILTBACK_LOW_VOLTAGE;
+		beep_alert(3, 0);	// Triple-beep
 	}else{
 		// Normal running
 		if (use_reverse_stop && (erpm < 0)) {
@@ -910,6 +913,27 @@ static THD_FUNCTION(balance_thread, arg) {
 			}
 		}
 
+		/*
+		 * Use external buzzer to notify rider of foot switch faults.
+		 */
+		if (switch_state == OFF) {
+			if ((abs_erpm > balance_conf.fault_adc_half_erpm)
+				&& (state >= RUNNING)
+				&& (state <= RUNNING_TILTBACK_LOW_VOLTAGE))
+			{
+				// If we're at riding speed and the switch is off => ALERT the user
+				// set force=true since this could indicate an imminent shutdown/nosedive
+				beep_on(true);
+			}
+			else {
+				// if we drop below riding speed stop buzzing
+				beep_off(false);
+			}
+		}
+		else {
+			// if the switch comes back on we stop buzzing
+			beep_off(false);
+		}
 
 		// Control Loop State Logic
 		switch(state){
@@ -919,6 +943,27 @@ static THD_FUNCTION(balance_thread, arg) {
 				if(imu_startup_done()){
 					reset_vars();
 					state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+
+#ifdef HAS_EXT_BUZZER
+					// Let the rider know that the board is ready
+					beep_on(true);
+					chThdSleepMilliseconds(100);
+					beep_off(true);
+
+					// Are we within 5V of the LV tiltback threshold? Issue 1 beep for each volt below that
+					double bat_volts = GET_INPUT_VOLTAGE();
+					double threshold = balance_conf.tiltback_lv + 5;
+					if (bat_volts < threshold) {
+						chThdSleepMilliseconds(400);
+						while (bat_volts < threshold) {
+							chThdSleepMilliseconds(200);
+							beep_on(1);
+							chThdSleepMilliseconds(300);
+							beep_off(1);
+							threshold -= 1;
+						}
+					}
+#endif
 				}
 				break;
 			case (RUNNING):
@@ -1067,6 +1112,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				brake();
 				break;
 		}
+		update_beep_alert();
 
 		// Debug outputs
 		app_balance_sample_debug();
@@ -1075,6 +1121,8 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Delay between loops
 		chThdSleep(loop_time - roundf(filtered_loop_overshoot));
 	}
+	// in case we leave this force the buzzer off (force=regardless of ongoing multi beeps)
+	beep_off(true);
 
 	// Disable output
 	brake();
