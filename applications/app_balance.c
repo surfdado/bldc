@@ -31,6 +31,7 @@
 #include "datatypes.h"
 #include "comm_can.h"
 #include "terminal.h"
+#include "mcpwm_foc.h"
 
 
 #include <math.h>
@@ -108,6 +109,7 @@ static bool use_soft_start;
 // Feature: Adaptive Torque Response
 static float acceleration, last_erpm, shedfactor;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
+static int erpm_sign;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -291,6 +293,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Reset loop time variables
 	last_time = 0;
 	filtered_loop_overshoot = 0;
+
+	if (mc_interface_get_configuration()->m_invert_direction)
+		erpm_sign = -1;
+	else
+		erpm_sign = 1;
 }
 
 void app_balance_start(void) {
@@ -852,9 +859,10 @@ static THD_FUNCTION(balance_thread, arg) {
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
 
-		acceleration = biquad_process(&accel_biquad1, erpm - last_erpm);
+		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
+		acceleration = biquad_process(&accel_biquad1, smooth_erpm - last_erpm);
 		acceleration = biquad_process(&accel_biquad2, acceleration);
-		last_erpm = erpm;//smooth_erpm;
+		last_erpm = smooth_erpm;
 
 		if(balance_conf.multi_esc){
 			avg_erpm = erpm;
