@@ -114,6 +114,9 @@ static float motor_position;
 static float adc1, adc2;
 static SwitchState switch_state;
 
+// Turntilt
+float last_yaw_angle, yaw_angle, yaw_change, yaw_aggregate, yaw_aggregate_target;
+
 // Rumtime state values
 static BalanceState state;
 int log_balance_state;	// not static so we can log it
@@ -122,6 +125,7 @@ static float last_proportional, abs_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float tiltback_constant, tiltback_erpmbased, tiltback_constant_erpm;
+static float torquetilt_target;
 static float torquetilt_brk_start_current;
 static float torquetilt_filtered_current, torquetilt_interpolated;
 static float turntilt_target, turntilt_interpolated;
@@ -245,8 +249,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float booster_angle = balance_conf.booster_angle;
 	int angl = (int) booster_angle;
 	float angl_rest = booster_angle - angl;
-	if (angl_rest == 0.1)
+	if ((angl_rest > 0.09) && (angl_rest < 0.11))
 		booster_beep = 1;
+	else
+		booster_beep = 0;
+
+	// borrow yaw_ki for aggregate yaw-change target
+	yaw_aggregate_target = balance_conf.yaw_ki;
 
 	shedfactor = balance_conf.yaw_kp;
 	// guardrails:
@@ -352,6 +361,10 @@ void reset_vars(void){
 	diff_time = 0;
 	max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start;
 	new_ride_state = ride_state = RIDE_OFF;
+
+	// Turn tilt:
+	last_yaw_angle = imu_get_yaw() * 180.0f / M_PI;
+	yaw_change = yaw_aggregate = 0;
 
 	if (disable_all_5_3_features) {
 		kp = kp_acc;
@@ -657,7 +670,6 @@ void apply_torquetilt(void){
 		start_current = torquetilt_brk_start_current;
 	}
 
-	float torquetilt_target;
 	float accel = acceleration;
 	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
 	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
@@ -749,18 +761,13 @@ void apply_torquetilt(void){
 
 void apply_turntilt(void){
 	// Calculate desired angle
-	turntilt_target = abs_roll_angle_sin * balance_conf.turntilt_strength;
+	turntilt_target = fabsf(yaw_change) * balance_conf.turntilt_strength;
+	//turntilt_target = abs_roll_angle_sin * balance_conf.turntilt_strength;
+	float abs_yaw_change = fabsf(yaw_change);
 
 	// Apply cutzone
-	if(abs_roll_angle < balance_conf.turntilt_start_angle){
+	if(abs_yaw_change * 100 < balance_conf.turntilt_start_angle){
 		turntilt_target = 0;
-	}
-
-	// Disable below erpm threshold otherwise add directionality
-	if(abs_erpm < balance_conf.turntilt_start_erpm){
-		turntilt_target = 0;
-	}else {
-		turntilt_target *= SIGN(erpm);
 	}
 
 	// Apply speed scaling
@@ -770,8 +777,41 @@ void apply_turntilt(void){
 		turntilt_target *= 1 + (balance_conf.turntilt_erpm_boost/100.0f);
 	}
 
+	// Increase turntilt based on aggregate yaw change (at most: double it)
+	if (abs_erpm > 2000) {
+		float aggregate_boost = 1 + fabsf(yaw_aggregate) / yaw_aggregate_target;
+		aggregate_boost = fmaxf(aggregate_boost, 2);
+		turntilt_target *= aggregate_boost;
+	}
+
 	// Limit angle to max angle
 	turntilt_target = fminf(turntilt_target, balance_conf.turntilt_angle_limit);
+
+	// Reduce turntilt_target during moments of high torque response
+	if (fabsf(torquetilt_target) > 3) {
+		// Start scaling turntilt when ATR>3, down to 0 turntilt for ATR > 6
+		float ttscaling = (6 - fabsf(torquetilt_target)) / 3;
+		if (ttscaling < 0)
+			ttscaling = 0;
+		turntilt_target *= ttscaling;
+	}
+
+	// Disable below erpm threshold otherwise add directionality
+	if(abs_erpm < balance_conf.turntilt_start_erpm){
+		turntilt_target = 0;
+	}else {
+		turntilt_target *= SIGN(erpm);
+	}
+
+	if (fabsf(turntilt_target) > 0.5) {
+		if (booster_beep && !booster_beeping) {
+			beep_alert(1, 0);
+			booster_beeping = 1;
+		}
+	}
+	else {
+		booster_beeping = 0;
+	}
 
 	// Move towards target limited by max speed
 	if(fabsf(turntilt_target - turntilt_interpolated) < turntilt_step_size){
@@ -782,7 +822,6 @@ void apply_turntilt(void){
 		turntilt_interpolated -= turntilt_step_size;
 	}
 	setpoint += turntilt_interpolated;
-
 }
 
 static void update_lights(void){
@@ -875,6 +914,17 @@ static THD_FUNCTION(balance_thread, arg) {
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
+
+		// Turn tilt:
+		yaw_angle = imu_get_yaw() * 180.0f / M_PI;
+		float new_change = yaw_angle - last_yaw_angle;
+		last_yaw_angle = yaw_angle;
+		if (fabsf(new_change) > 100)				// yaw flips signs at 180, ignore those changes
+			new_change = yaw_change * 0.95;
+		yaw_change = yaw_change * 0.95 + 0.05 * (new_change);
+		if (SIGN(yaw_change) != SIGN(yaw_aggregate))
+			yaw_aggregate = 0;
+		yaw_aggregate += yaw_change;
 
 		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
 		acceleration = biquad_filter(smooth_erpm - last_erpm);
@@ -1072,13 +1122,13 @@ static THD_FUNCTION(balance_thread, arg) {
 							booster_pid = balance_conf.booster_current * SIGN(proportional);
 						}
 						if (booster_beep && !booster_beeping) {
-							beep_alert(1, 0);
-							booster_beeping = 1;
+							//beep_alert(1, 0);
+							//booster_beeping = 1;
 						}
 					}
 					else {
 						if (booster_beeping) {
-							booster_beeping = 0;
+							//booster_beeping = 0;
 						}
 						booster_pid = 0;
 					}
