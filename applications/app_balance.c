@@ -110,7 +110,12 @@ static bool use_soft_start;
 // Feature: Adaptive Torque Response
 static float acceleration, last_erpm, shedfactor;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
+static float torquetilt_target;
 static int erpm_sign;
+
+// Feature: Turntilt
+static float last_yaw_angle, yaw_angle, abs_yaw_change, yaw_change, yaw_aggregate;
+static float tuntilt_boost_per_erpm, yaw_aggregate_target;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -234,6 +239,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		shedfactor = 0.99;
 	if (shedfactor < 0.5)
 		shedfactor = 0.98;
+
+	// Feature: Turntilt
+	yaw_aggregate_target = balance_conf.yaw_ki;			// borrow yaw_ki for aggregate yaw-change target
+	tuntilt_boost_per_erpm = (float)balance_conf.turntilt_erpm_boost / 100.0 / (float)balance_conf.turntilt_erpm_boost_end;
 
 	// minimum aggregate grunt to start torque tilt
 	grunt_threshold = balance_conf.yaw_kd;
@@ -656,7 +665,6 @@ static void apply_torquetilt(void){
 	}
 
 	// grunt is a measure of how much we're struggling to produce acceleration
-	float torquetilt_target;
 	float accel = acceleration;
 	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
 	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
@@ -744,30 +752,59 @@ static void apply_torquetilt(void){
 }
 
 static void apply_turntilt(void){
-	// Calculate desired angle
-	turntilt_target = abs_roll_angle_sin * balance_conf.turntilt_strength;
-
 	// Apply cutzone
-	if(abs_roll_angle < balance_conf.turntilt_start_angle){
+	if(abs_yaw_change * 100 < balance_conf.turntilt_start_angle){
 		turntilt_target = 0;
 	}
+	else {
+		// Calculate desired angle
+		turntilt_target = abs_yaw_change * balance_conf.turntilt_strength;
+		//turntilt_target = abs_roll_angle_sin * balance_conf.turntilt_strength;
 
-	// Disable below erpm threshold otherwise add directionality
-	if(abs_erpm < balance_conf.turntilt_start_erpm){
-		turntilt_target = 0;
-	}else {
-		turntilt_target *= SIGN(erpm);
+		// Apply speed scaling
+		float boost;
+		if(abs_erpm < balance_conf.turntilt_erpm_boost_end){
+			boost = 1.0 + abs_erpm * tuntilt_boost_per_erpm;
+		}else{
+			boost = 1.0 + (float)balance_conf.turntilt_erpm_boost / 100.0;
+		}
+		turntilt_target *= boost;
+
+		// Increase turntilt based on aggregate yaw change (at most: double it)
+		float aggregate_damper = 1.0;
+		if (abs_erpm < 2000) {
+			aggregate_damper = 0.5;
+		}
+		boost = 1 + aggregate_damper * fabsf(yaw_aggregate) / yaw_aggregate_target;
+		boost = fminf(boost, 2);
+		turntilt_target *= boost;
+
+		// Limit angle to max angle
+		turntilt_target = fminf(turntilt_target, balance_conf.turntilt_angle_limit);
+
+		// Disable below erpm threshold otherwise add directionality
+		if(abs_erpm < balance_conf.turntilt_start_erpm){
+			turntilt_target = 0;
+		}else {
+			turntilt_target *= SIGN(erpm);
+		}
+
+		// ATR interference: Reduce turntilt_target during moments of high torque response
+		float atr_min = 2;
+		float atr_max = 5;
+		if (SIGN(torquetilt_target) != SIGN(turntilt_target)) {
+			// further reduced turntilt during moderate to steep downhills
+			atr_min = 1;
+			atr_max = 4;
+		}
+		if (fabsf(torquetilt_target) > atr_min) {
+			// Start scaling turntilt when ATR>2, down to 0 turntilt for ATR > 5 degrees
+			float atr_scaling = (atr_max - fabsf(torquetilt_target)) / (atr_max-atr_min);
+			if (atr_scaling < 0)
+				atr_scaling = 0;
+			turntilt_target *= atr_scaling;
+		}
 	}
-
-	// Apply speed scaling
-	if(abs_erpm < balance_conf.turntilt_erpm_boost_end){
-		turntilt_target *= 1 + ((balance_conf.turntilt_erpm_boost/100.0f) * (abs_erpm / balance_conf.turntilt_erpm_boost_end));
-	}else{
-		turntilt_target *= 1 + (balance_conf.turntilt_erpm_boost/100.0f);
-	}
-
-	// Limit angle to max angle
-	turntilt_target = fminf(turntilt_target, balance_conf.turntilt_angle_limit);
 
 	// Move towards target limited by max speed
 	if(fabsf(turntilt_target - turntilt_interpolated) < turntilt_step_size){
@@ -778,7 +815,6 @@ static void apply_turntilt(void){
 		turntilt_interpolated -= turntilt_step_size;
 	}
 	setpoint += turntilt_interpolated;
-
 }
 
 static void brake(void){
@@ -862,6 +898,23 @@ static THD_FUNCTION(balance_thread, arg) {
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
 		abs_erpm = fabsf(erpm);
+
+		// Turn tilt:
+		yaw_angle = imu_get_yaw() * 180.0f / M_PI;
+		float new_change = yaw_angle - last_yaw_angle;
+		last_yaw_angle = yaw_angle;
+		if (fabsf(new_change) > 100)				// yaw flips signs at 180, ignore those changes
+			new_change = yaw_change * 0.95;
+		// To avoid overreactions at low speed, limit change here:
+		new_change = fminf(new_change, 0.12);
+		new_change = fmaxf(new_change, -0.12);
+		yaw_change = yaw_change * 0.95 + 0.05 * (new_change);
+		// Clear the aggregate yaw whenever we change direction
+		if (SIGN(yaw_change) != SIGN(yaw_aggregate))
+			yaw_aggregate = 0;
+		abs_yaw_change = fabsf(yaw_change);
+		if (abs_yaw_change > 0.03)				// don't count tiny yaw changes towards aggregate
+			yaw_aggregate += yaw_change;
 
 		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
 		acceleration = biquad_process(&accel_biquad1, smooth_erpm - last_erpm);
