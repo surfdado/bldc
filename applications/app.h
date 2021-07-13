@@ -22,6 +22,8 @@
 
 #include "conf_general.h"
 
+#define LOGBUFSIZE 1000
+
 // Functions
 const app_configuration* app_get_configuration(void);
 void app_set_configuration(app_configuration *conf);
