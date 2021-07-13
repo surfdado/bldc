@@ -80,6 +80,7 @@ static mutex_t terminal_mutex;
 static volatile int fw_version_sent_cnt = 0;
 static bool isInitialized = false;
 extern int log_balance_state;
+extern float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki;
 
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
@@ -374,10 +375,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_id(), 1e2, &ind);
+			buffer_append_float32(send_buffer, balance_atr/*mc_interface_read_reset_avg_id()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_iq(), 1e2, &ind);
+			buffer_append_float32(send_buffer, balance_carve/*mc_interface_read_reset_avg_iq()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
 			buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind);
@@ -410,7 +411,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 16)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_float32(send_buffer, balance_setpoint /*mc_interface_get_pid_pos_now()*/, 1e6, &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
 			uint8_t current_controller_id = app_get_configuration()->controller_id;
@@ -428,10 +429,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, NTC_TEMP_MOS3(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 19)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_vd(), 1e3, &ind);
+			buffer_append_float32(send_buffer, balance_ki /*mc_interface_read_reset_avg_vd()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_vq(), 1e3, &ind);
+			buffer_append_float32(send_buffer, balance_integral /*mc_interface_read_reset_avg_vq()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 21)) {
 			uint8_t status = 0;
