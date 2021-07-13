@@ -251,7 +251,7 @@
  * Enable CAN-bus
  */
 #ifndef CAN_ENABLE
-#define CAN_ENABLE					1
+#define CAN_ENABLE					0
 #endif
 
 #ifdef HW_HAS_NO_CAN
