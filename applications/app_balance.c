@@ -33,6 +33,7 @@
 #include "terminal.h"
 #include "mcpwm_foc.h"
 #include "buzzer.h"
+#include "app.h"
 
 
 #include <math.h>
@@ -157,6 +158,14 @@ static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_exp
 
 // Log values
 float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki;
+
+// Micro-Logging
+float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE];
+float b0, b1, b2, b3, b4, b5, b6, b7, b8;
+float logtimer;
+int logperiod, logdelaycounter;
+int logidx;
 
 // Function Prototypes
 static void set_current(float current, float yaw_current);
@@ -311,6 +320,21 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		erpm_sign = -1;
 	else
 		erpm_sign = 1;
+
+	// Micro-Logging
+	logidx = 0;
+	buf0[0] = 0;
+	buf1[0] = 0;
+	buf2[0] = 0;
+	buf3[0] = 0;
+	buf4[0] = 0;
+	buf5[0] = 0;
+	buf6[0] = 0;
+	buf7[0] = 0;
+	buf8[0] = 0;
+	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = 0;
+	logperiod = (int) balance_conf.yaw_current_clamp;
+	logdelaycounter = 0;
 }
 
 void app_balance_start(void) {
@@ -1140,6 +1164,68 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 
 					yaw_last_proportional = yaw_proportional;
+				}
+
+				// LOG:
+				if (logidx < LOGBUFSIZE) {
+					float trig = balance_conf.roll_steer_erpm_kp;
+					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+100)) || (logidx > 0)) {
+						logdelaycounter++;
+						b0 += pitch_angle;
+						b1 += pid_value;
+						b2 += grunt_filtered;
+						b3 += acceleration;	// ERPM Acceleration
+						b4 += torquetilt_target;//acc[0];		// IMU Acceleration;
+						b5 += setpoint;
+						b6 += last_erpm;
+						b7 = fmaxf(b7, grunt_aggregate);
+						b8 = integral;
+
+						if (logdelaycounter >= logperiod) {
+							logdelaycounter = 0;
+
+							if (logidx == 0) {
+								buf0[0] = 5555;
+								buf1[0] = 5555;
+								buf2[0] = 5555;
+								buf3[0] = 5555;
+								buf4[0] = 5555;
+								buf5[0] = 5555;
+								buf6[0] = 5555;
+								buf7[0] = 5555;
+								buf8[0] = 5555;
+								logidx++;
+								beep_alert(2, 0);
+							}
+							buf0[logidx] = b0 / logperiod;
+							buf1[logidx] = b1 / logperiod;
+							buf2[logidx] = b2 / logperiod;
+							buf3[logidx] = b3 / logperiod;
+							buf4[logidx] = b4 / logperiod;
+							buf5[logidx] = b5 / logperiod;
+							buf6[logidx] = b6 / logperiod;
+							buf7[logidx] = b7;// / logperiod;
+							buf8[logidx] = b8;// / logperiod;
+							logidx++;
+							b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = 0;
+							if (logidx == LOGBUFSIZE)
+								beep_alert(2, 0);
+						}
+					}
+				}
+				else if (buf0[0] == 1111) {
+					if (logidx == LOGBUFSIZE) {
+						// signal that logging is done
+						logidx++;
+						logtimer = current_time;
+						//beep_alert(1, 1);
+					}
+					else {
+						// re-arm logging after 5 seconds
+						if ((current_time - logtimer) > 5000) {
+							logidx = 0;
+						}
+					}
 				}
 
 				// Output to motor
