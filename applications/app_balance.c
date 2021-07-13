@@ -155,6 +155,9 @@ static int debug_render_1, debug_render_2;
 static int debug_sample_field, debug_sample_count, debug_sample_index;
 static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_experiment_4, debug_experiment_5, debug_experiment_6;
 
+// Log values
+float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki;
+
 // Function Prototypes
 static void set_current(float current, float yaw_current);
 static void terminal_render(int argc, const char **argv);
@@ -1110,6 +1113,13 @@ static THD_FUNCTION(balance_thread, arg) {
 						}
 					}
 				}
+
+				// For logging only:
+				balance_integral = integral;
+				balance_ki = ki;
+				balance_setpoint = setpoint;
+				balance_atr = torquetilt_target;
+				balance_carve = turntilt_target;
 
 				if(balance_conf.multi_esc){
 					// Calculate setpoint
