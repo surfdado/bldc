@@ -284,6 +284,11 @@ int main(void) {
 	}
 #endif
 
+	// Let the rider know that the system has booted
+	beep_on(1);
+	chThdSleepMilliseconds(100);
+	beep_off(1);
+
 	// Threads
 	chThdCreateStatic(led_thread_wa, sizeof(led_thread_wa), NORMALPRIO, led_thread, NULL);
 	chThdCreateStatic(periodic_thread_wa, sizeof(periodic_thread_wa), NORMALPRIO, periodic_thread, NULL);
