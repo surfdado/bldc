@@ -723,7 +723,8 @@ static void apply_torquetilt(void){
 	}
 
 	float step_size;
-	if((torquetilt_interpolated - torquetilt_target > 0 && torquetilt_target > 0) || (torquetilt_interpolated - torquetilt_target < 0 && torquetilt_target < 0)){
+	if(((torquetilt_target >= 0) && (torquetilt_interpolated - torquetilt_target > 0)) ||
+	   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
 		step_size = torquetilt_off_step_size;
 	}else{
 		step_size = torquetilt_on_step_size;
