@@ -708,8 +708,7 @@ static void apply_noseangling(void){
 
 static void apply_torquetilt(void){
 	// Skip torque tilt logic if start current is 0
-	float start_current = balance_conf.torquetilt_start_current;
-	if (start_current == 0)
+	if (balance_conf.torquetilt_start_current == 0)
 		return;
 
 	// Filter current (Biquad)
@@ -745,7 +744,9 @@ static void apply_torquetilt(void){
 		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 		// Finally multiply it by sign motor current to get directionality back
-		torquetilt_target = fminf(fmaxf((fabsf(torquetilt_filtered_current) - balance_conf.torquetilt_start_current), 0) * balance_conf.torquetilt_strength, balance_conf.torquetilt_angle_limit) * SIGN(torquetilt_filtered_current);
+		torquetilt_target = fabsf(torquetilt_filtered_current) * balance_conf.torquetilt_strength;
+		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
+		torquetilt_target *= SIGN(torquetilt_filtered_current);
 	}
 	else {
 		// If the aggregate grunt is below the ratio then we must be just accelerating. No TT here!!
@@ -754,11 +755,11 @@ static void apply_torquetilt(void){
 	//ttt = torquetilt_target;
 
 	// don't get the board too "excited", don't let the nose rise much above 0 ;)
-	float max_tilt = balance_conf.torquetilt_angle_limit / 4;
+	float max_tilt = 0;//balance_conf.torquetilt_angle_limit / 4;
 	bool nose_is_up = (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target));
 	float actual_tilt = fabsf(last_proportional - torquetilt_interpolated);
 	if (nose_is_up && (fabsf(torquetilt_target) > 0) && (actual_tilt > max_tilt)) {
-		torquetilt_target = torquetilt_target - SIGN(torquetilt_target) * actual_tilt * 0.5;
+		torquetilt_target = torquetilt_target - SIGN(torquetilt_target) * actual_tilt * 0.6;
 	}
 
 	// Deal with integral windup
