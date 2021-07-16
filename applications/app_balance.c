@@ -522,6 +522,12 @@ static bool check_faults(bool ignoreTimers){
 			state = FAULT_SWITCH_FULL;
 			return true;
 		}
+		// low speed (below 4 x half-fault threshold speed):
+		else if ((abs_erpm < balance_conf.fault_adc_half_erpm * 4)
+				 && (ST2MS(current_time - fault_switch_timer) > balance_conf.fault_delay_switch_half)){
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
 		else if ((abs_erpm < balance_conf.fault_adc_half_erpm) && (fabsf(pitch_angle) > 15)) {
 			// QUICK STOP
 			state = FAULT_SWITCH_FULL;
