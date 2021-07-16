@@ -1050,10 +1050,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if (setpointAdjustmentType == TILTBACK) {
-					apply_noseangling();
-					apply_torquetilt();
-					apply_turntilt();
+				if ((setpointAdjustmentType != CENTERING) && (setpointAdjustmentType != REVERSESTOP)) {
+					apply_noseangling();	// Always do nose angling, even during tiltback situations
+					apply_torquetilt();		// Torquetilt remains in effect even during tiltback situations
+					if (state == RUNNING)
+						apply_turntilt();
 				}
 
 				// Do PID maths
@@ -1115,8 +1116,8 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				last_proportional = proportional;
 
-				// Apply Booster
-				if (setpointAdjustmentType == TILTBACK) {
+				// Apply Booster (but only for normal riding without LV/HV/Duty tiltback)
+				if (state == RUNNING) {
 					abs_proportional = fabsf(proportional);
 					if(abs_proportional > balance_conf.booster_angle){
 						if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
