@@ -223,8 +223,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		use_reverse_stop = true;
 		reverse_tolerance = 50000;
 	}
-	else
+	else {
 		use_reverse_stop = false;
+	}
 
 	// Feature: Soft Start
 	use_soft_start = (balance_conf.startup_speed < 10);
@@ -391,7 +392,6 @@ static void reset_vars(void){
 	biquad_reset(&d_biquad_highpass);
 	// Set values for startup
 	setpoint = pitch_angle;
-	setpoint_target_interpolated = pitch_angle;
 	setpoint_target = 0;
 	noseangling_interpolated = 0;
 	torquetilt_interpolated = 0;
@@ -413,12 +413,16 @@ static void reset_vars(void){
 	grunt_filtered = 0;
 	pid_value = 0;
 
+	// Start with a minimal backwards push
+	float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
+	setpoint_target_interpolated = (fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
+
+	// Soft-start vs normal aka quick-start:
 	if (use_soft_start) {
-		// Soft start
 		// minimum values (even 0,0,0 is possible) for soft start:
 		kp = 1;
 		ki = 0;
-		kd = 100;
+		kd = 10;
 	}
 	else {
 		// Normal start / quick-start
