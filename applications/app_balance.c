@@ -1129,7 +1129,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						logdelaycounter++;
 						b0 += pitch_angle;
 						b1 += pid_value;
-						b2 += grunt_filtered;
+						b2 += kd * derivative;//grunt_filtered;
 						b3 += acceleration;	// ERPM Acceleration
 						b4 += torquetilt_target;//acc[0];		// IMU Acceleration;
 						b5 += setpoint;
