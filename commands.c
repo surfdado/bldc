@@ -50,6 +50,7 @@
 #include "bms.h"
 #include "qmlui.h"
 #include "crc.h"
+#include "buzzer.h"
 
 #include <math.h>
 #include <string.h>
@@ -503,6 +504,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_SET_MCCONF: {
+		if (app_is_running()){
+			// Balance app is running - reject this attempt!
+			beep_alert(3, true);	// issue 3 long beeps
+			break;
+		}
 #ifndef	HW_MCCONF_READ_ONLY
 		mc_configuration *mcconf = mempools_alloc_mcconf();
 		*mcconf = *mc_interface_get_configuration();
@@ -566,6 +572,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_SET_APPCONF: {
+		if (app_is_running()){
+			// Balance app is running - reject this attempt!
+			beep_alert(3, true);	// issue 3 long beeps
+			break;
+		}
 #ifndef	HW_APPCONF_READ_ONLY
 		app_configuration *appconf = mempools_alloc_appconf();
 		*appconf = *app_get_configuration();
