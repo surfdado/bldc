@@ -159,8 +159,8 @@ float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki
 
 // Micro-Logging
 float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
-float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE];
-float b0, b1, b2, b3, b4, b5, b6, b7, b8;
+float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
+float b0, b1, b2, b3, b4, b5, b6, b7, b8, b9;
 float logtimer;
 int logperiod, logdelaycounter;
 int logidx;
@@ -329,7 +329,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	buf6[0] = 0;
 	buf7[0] = 0;
 	buf8[0] = 0;
-	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = 0;
+	buf9[0] = 0;
+	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 =0;
 	logperiod = (int) balance_conf.yaw_current_clamp;
 	logdelaycounter = 0;
 }
@@ -1125,14 +1126,15 @@ static THD_FUNCTION(balance_thread, arg) {
 					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+100)) || (logidx > 0)) {
 						logdelaycounter++;
 						b0 += pitch_angle;
-						b1 += acceleration1;//atr_intensity;
-						b2 += acceleration2;//grunt_filtered;
+						b1 += atr_intensity;
+						b2 += grunt_filtered;
 						b3 += acceleration;	// ERPM Acceleration
-						b4 += derivative;//torquetilt_target;//acc[0];		// IMU Acceleration;
+						b4 += torquetilt_target;//acc[0];		// IMU Acceleration;
 						b5 += setpoint;
 						b6 += last_erpm;
 						b7 = fmaxf(b7, grunt_aggregate);
-						b8 += pid_value;//integral;
+						b8 = integral;
+						b9 += pid_value;//integral;
 
 						if (logdelaycounter >= logperiod) {
 							logdelaycounter = 0;
@@ -1143,10 +1145,11 @@ static THD_FUNCTION(balance_thread, arg) {
 								buf2[0] = 5555;
 								buf3[0] = 5555;
 								buf4[0] = 5555;
-								buf5[0] = 5555;
+								buf5[0] = mcpwm_foc_get_freq();
 								buf6[0] = 5555;
 								buf7[0] = 5555;
 								buf8[0] = 5555;
+								buf9[0] = 5555;
 								logidx++;
 								beep_alert(2, 0);
 							}
@@ -1158,9 +1161,10 @@ static THD_FUNCTION(balance_thread, arg) {
 							buf5[logidx] = b5 / logperiod;
 							buf6[logidx] = b6 / logperiod;
 							buf7[logidx] = b7;// / logperiod;
-							buf8[logidx] = b8 / logperiod;
+							buf8[logidx] = b8;// / logperiod;
+							buf9[logidx] = b9 / logperiod;
 							logidx++;
-							b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = 0;
+							b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 = 0;
 							if (logidx == LOGBUFSIZE)
 								beep_alert(2, 0);
 						}
