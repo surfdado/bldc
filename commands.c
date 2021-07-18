@@ -83,7 +83,7 @@ static bool isInitialized = false;
 extern int log_balance_state;
 extern float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki;
 extern float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
-extern float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE];
+extern float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
 static int logidx;
 
 void commands_init(void) {
@@ -415,6 +415,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 		if (mask & ((uint32_t)1 << 13)) {
 			buffer_append_int32(send_buffer, buf6[logidx]/*mc_interface_get_tachometer_value(false)*/, &ind);
+		}
+		if (mask & ((uint32_t)1 << 14)) {
+			buffer_append_int32(send_buffer, buf9[logidx]/*mc_interface_get_tachometer_abs_value(false)*/, &ind);
 			if (buf1[0] == 5555) {
 				if (logidx < LOGBUFSIZE-1)
 					logidx++;
@@ -424,9 +427,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			else {
 				logidx = 0;
 			}
-		}
-		if (mask & ((uint32_t)1 << 14)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
 		}
 		if (mask & ((uint32_t)1 << 15)) {
 			send_buffer[ind++] = mc_interface_get_fault();
