@@ -745,12 +745,7 @@ static void apply_torquetilt(void){
 	if (balance_conf.torquetilt_start_current == 0)
 		return;
 
-	// Filter current (Biquad)
-	if(balance_conf.torquetilt_filter > 0){
-		torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
-	}else{
-		torquetilt_filtered_current  = motor_current;
-	}
+	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
@@ -835,7 +830,13 @@ static void apply_torquetilt(void){
 	   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
 		step_size = torquetilt_off_step_size;
 	}else{
-		step_size = torquetilt_on_step_size;
+		// reduce response speed at lower erpms
+		if (abs_erpm < 800)
+			step_size = torquetilt_on_step_size / 2;
+		else if (abs_erpm < 500)
+			step_size = torquetilt_on_step_size / 3;
+		else
+			step_size = torquetilt_on_step_size;
 	}
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < step_size){
