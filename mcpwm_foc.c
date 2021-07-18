@@ -168,6 +168,7 @@ typedef struct {
 	float m_hall_dt_diff_now;
 } motor_all_state_t;
 
+static float filter_foc_freq;
 static float smooth_erpm;
 static float bq_z1, bq_z2;
 static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
@@ -327,6 +328,9 @@ static volatile bool hfi_thd_stop;
 
 float mcpwm_foc_get_smooth_erpm() {
 	return smooth_erpm;
+}
+float mcpwm_foc_get_freq() {
+	return filter_foc_freq;
 }
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
@@ -566,8 +570,14 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 #endif
 
 	float foc_freq = conf_m1->foc_f_sw;
-	if (foc_freq < 1000.0)	// this shouldn't happen
+	if (foc_freq < 1000.0) {	// this shouldn't happen
 		foc_freq = 20000.0;
+		filter_foc_freq = 20002.0;
+	}
+	else {
+		filter_foc_freq = foc_freq;
+	}
+		
 	// Configure for 90 Hertz (hard-coded atm)
 	biquad_config(90.0 / foc_freq);
 	smooth_erpm = 0;
