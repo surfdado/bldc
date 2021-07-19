@@ -893,9 +893,17 @@ static void apply_turntilt(void){
 		if (fabsf(torquetilt_target) > atr_min) {
 			// Start scaling turntilt when ATR>2, down to 0 turntilt for ATR > 5 degrees
 			float atr_scaling = (atr_max - fabsf(torquetilt_target)) / (atr_max-atr_min);
-			if (atr_scaling < 0)
+			if (atr_scaling < 0) {
 				atr_scaling = 0;
+				// during heavy torque response clear the yaw aggregate too
+				yaw_aggregate = 0;
+			}
 			turntilt_target *= atr_scaling;
+		}
+		if (fabsf(pitch_angle - noseangling_interpolated) > 4) {
+			// no setpoint changes during heavy acceleration or braking
+			turntilt_target = 0;
+			yaw_aggregate = 0;
 		}
 	}
 
