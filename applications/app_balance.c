@@ -144,8 +144,7 @@ static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
-static float d_pt1_lowpass_state, d_pt1_lowpass_k, d_pt1_highpass_state, d_pt1_highpass_k;
-static Biquad d_biquad_lowpass, d_biquad_highpass;
+static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
 static systime_t brake_timeout;
 
@@ -265,24 +264,22 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if(balance_conf.loop_time_filter > 0){
 		loop_overshoot_alpha = 2*M_PI*((float)1/balance_conf.hertz)*balance_conf.loop_time_filter/(2*M_PI*((float)1/balance_conf.hertz)*balance_conf.loop_time_filter+1);
 	}
-	if(balance_conf.kd_pt1_lowpass_frequency > 0){
-		float dT = 1.0 / balance_conf.hertz;
-		float RC = 1.0 / ( 2.0 * M_PI * balance_conf.kd_pt1_lowpass_frequency);
-		d_pt1_lowpass_k =  dT / (RC + dT);
+
+	// Use only pt1 lowpass filter for DTerm (limited to 1..30, default to 10)
+	float dt_filter_freq = 10;
+	if(balance_conf.kd_pt1_lowpass_frequency >= 1){
+		dt_filter_freq = balance_conf.kd_pt1_lowpass_frequency;
 	}
-	if(balance_conf.kd_pt1_highpass_frequency > 0){
-		float dT = 1.0 / balance_conf.hertz;
-		float RC = 1.0 / ( 2.0 * M_PI * balance_conf.kd_pt1_highpass_frequency);
-		d_pt1_highpass_k =  dT / (RC + dT);
+	else if(balance_conf.kd_biquad_lowpass >= 1){
+		dt_filter_freq = balance_conf.kd_biquad_lowpass;
 	}
-	if(balance_conf.kd_biquad_lowpass > 0){
-		float Fc = balance_conf.kd_biquad_lowpass / balance_conf.hertz;
-		biquad_config(&d_biquad_lowpass, BQ_LOWPASS, Fc);
+	if (dt_filter_freq > 30){
+		dt_filter_freq = 10;
 	}
-	if(balance_conf.kd_biquad_highpass > 0){
-		float Fc = balance_conf.kd_biquad_highpass / balance_conf.hertz;
-		biquad_config(&d_biquad_highpass, BQ_HIGHPASS, Fc);
-	}
+	float dT = 1.0 / balance_conf.hertz;
+	float RC = 1.0 / ( 2.0 * M_PI * dt_filter_freq);
+	d_pt1_lowpass_k =  dT / (RC + dT);
+
 	if(balance_conf.torquetilt_filter > 0){ // Torquetilt Current Biquad
 		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
@@ -387,9 +384,6 @@ static void reset_vars(void){
 	integral = 0;
 	last_proportional = 0;
 	d_pt1_lowpass_state = 0;
-	d_pt1_highpass_state = 0;
-	biquad_reset(&d_biquad_lowpass);
-	biquad_reset(&d_biquad_highpass);
 	// Set values for startup
 	setpoint = pitch_angle;
 	setpoint_target = 0;
@@ -1048,21 +1042,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				integral = integral + proportional;
 				derivative = last_pitch_angle - pitch_angle;
 
-				// Apply D term filters
-				if(balance_conf.kd_pt1_lowpass_frequency > 0){
-					d_pt1_lowpass_state = d_pt1_lowpass_state + d_pt1_lowpass_k * (derivative - d_pt1_lowpass_state);
-					derivative = d_pt1_lowpass_state;
-				}
-				if(balance_conf.kd_pt1_highpass_frequency > 0){
-					d_pt1_highpass_state = d_pt1_highpass_state + d_pt1_highpass_k * (derivative - d_pt1_highpass_state);
-					derivative = derivative - d_pt1_highpass_state;
-				}
-				if(balance_conf.kd_biquad_lowpass > 0){
-					derivative = biquad_process(&d_biquad_lowpass, derivative);
-				}
-				if(balance_conf.kd_biquad_highpass > 0){
-					derivative = biquad_process(&d_biquad_highpass, derivative);
-				}
+				// Apply D term filter
+				d_pt1_lowpass_state = d_pt1_lowpass_state + d_pt1_lowpass_k * (derivative - d_pt1_lowpass_state);
+				derivative = d_pt1_lowpass_state;
 
 				// Switch between breaking PIDs and acceleration PIDs
 				float kp_target, ki_target, kd_target;
