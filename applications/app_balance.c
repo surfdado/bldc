@@ -96,6 +96,7 @@ static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_siz
 
 // Feature: Reverse Stop
 static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
+static systime_t reverse_timer;
 static bool use_reverse_stop;
 
 // Runtime values read from elsewhere
@@ -373,11 +374,25 @@ static bool check_faults(bool ignoreTimers){
 		fault_switch_timer = current_time;
 	}
 
-	// Feature: Reverse-Stop - Taking your foot off while reversing? Ignore delays
+	// Feature: Reverse-Stop
 	if(setpointAdjustmentType == REVERSESTOP){
+		//  Taking your foot off entirely while reversing? Ignore delays
 		if ((fabsf(pitch_angle) > 15) || (switch_state == OFF)) {
 			state = FAULT_SWITCH_FULL;
 			return true;
+		}
+		// Above 10 degrees for a half a second? Switch it off
+		if ((fabsf(pitch_angle) > 10) && (ST2MS(current_time - reverse_timer) > 500)) {
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		// Above 5 degrees for a full second? Switch it off
+		if ((fabsf(pitch_angle) > 5) && (ST2MS(current_time - reverse_timer) > 1000)) {
+			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		if (fabsf(pitch_angle) < 5) {
+			reverse_timer = current_time;
 		}
 	}
 
@@ -473,6 +488,7 @@ static void calculate_setpoint_target(void){
 		// Normal running
 		if (use_reverse_stop && (erpm < 0)) {
 			setpointAdjustmentType = REVERSESTOP;
+			reverse_timer = current_time;
 			reverse_total_erpm = 0;
 		}
 		else {
