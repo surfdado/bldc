@@ -143,7 +143,7 @@ static float turntilt_target, turntilt_interpolated;
 static SetpointAdjustmentType setpointAdjustmentType;
 static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
-static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
+static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, tb_highvoltage_timer;
 static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
@@ -610,6 +610,10 @@ static bool check_faults(bool ignoreTimers){
 }
 
 static void calculate_setpoint_target(void){
+	if (GET_INPUT_VOLTAGE() < balance_conf.tiltback_hv) {
+		tb_highvoltage_timer = current_time;
+	}
+
 	if(setpointAdjustmentType == CENTERING) {
 		if (setpoint_target_interpolated != setpoint_target){
 			// Ignore tiltback during centering sequence
@@ -649,13 +653,22 @@ static void calculate_setpoint_target(void){
 		setpointAdjustmentType = TILTBACK_DUTY;
 		state = RUNNING_TILTBACK_DUTY;
 	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() > balance_conf.tiltback_hv){
-		if(erpm > 0){
-			setpoint_target = balance_conf.tiltback_hv_angle;
-		} else {
-			setpoint_target = -balance_conf.tiltback_hv_angle;
+		if ((ST2MS(current_time - fault_switch_timer) > 500) ||
+			(GET_INPUT_VOLTAGE() > balance_conf.tiltback_hv + 1)) {
+			// 500ms have passed or voltage is another volt higher, time for some tiltback
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_hv_angle;
+			} else {
+				setpoint_target = -balance_conf.tiltback_hv_angle;
+			}
+			setpointAdjustmentType = TILTBACK_HV;
+			state = RUNNING_TILTBACK_HIGH_VOLTAGE;
 		}
-		setpointAdjustmentType = TILTBACK_HV;
-		state = RUNNING_TILTBACK_HIGH_VOLTAGE;
+		else {
+			// The rider has 500ms to react to the triple-beep, or maybe it was just a short spike
+			setpointAdjustmentType = TILTBACK_NONE;
+			state = RUNNING;
+		}
 		beep_alert(3, 0);	// Triple-beep
 	}else if(abs_duty_cycle > 0.05 && GET_INPUT_VOLTAGE() < balance_conf.tiltback_lv){
 		if(erpm > 0){
