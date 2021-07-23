@@ -269,14 +269,29 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (grunt_threshold < 10)
 		grunt_threshold = 50;
 
+	// Braking PID softness
+	int brake_pid_scaling = balance_conf.kd_pt1_highpass_frequency;
+	int brake_kp_scaling = brake_pid_scaling / 100;
+	int brake_ki_scaling = (brake_pid_scaling - (brake_kp_scaling * 100)) / 10;
+	int brake_kd_scaling = brake_pid_scaling - (brake_kp_scaling * 100) - (brake_ki_scaling * 10);
+	if (brake_kp_scaling < 2) {
+		brake_kp_scaling = 10;
+		brake_ki_scaling = 10;
+		brake_kd_scaling = 10;
+	}
+	if (brake_ki_scaling < 1)
+		brake_ki_scaling = 10;
+	if (brake_kd_scaling < 5)
+		brake_kd_scaling = 10;
+
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
 	kd_acc = fminf(balance_conf.kd, 1500);
-	// Disable asymmetric PIDs for now to be safe
-	kp_brk = kp_acc;
-	ki_brk = ki_acc;
-	kd_brk = kd_acc;
+	// Reduced braking PIDs:
+	kp_brk = fminf(kp_acc / 10.0 * brake_kp_scaling, 5);
+	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
+	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1000);
 
 	tt_pid_intensity = balance_conf.torquetilt_start_current;
 	tt_pid_intensity = fminf(tt_pid_intensity, 4);
@@ -1126,13 +1141,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				d_pt1_lowpass_state = d_pt1_lowpass_state + d_pt1_lowpass_k * (derivative - d_pt1_lowpass_state);
 				derivative = d_pt1_lowpass_state;
 
-				// Switch between breaking PIDs and acceleration PIDs
+				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-				if ((SIGN(proportional) == SIGN(erpm)) || (torquetilt_interpolated > -0.2)) {
-					// acceleration
-					kp_target = kp_acc;
-					ki_target = ki_acc;
-					kd_target = kd_acc;
+				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 0.2)) {
 					// acceleration
 					float kp_multiplier = 0;
 					float ki_multiplier = 0;
