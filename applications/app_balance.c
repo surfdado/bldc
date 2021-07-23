@@ -1178,7 +1178,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						b0 += pitch_angle;
 						b1 += atr_intensity;
 						b2 += grunt_filtered;
-						b3 += acceleration;	// ERPM Acceleration
+						b3 += kp;//acceleration;	// ERPM Acceleration
 						b4 += torquetilt_target;//acc[0];		// IMU Acceleration;
 						b5 += setpoint;
 						b6 += last_erpm;
