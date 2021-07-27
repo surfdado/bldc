@@ -117,6 +117,9 @@ static int erpm_sign;
 static float last_yaw_angle, yaw_angle, abs_yaw_change, yaw_change, yaw_aggregate;
 static float tuntilt_boost_per_erpm, yaw_aggregate_target;
 
+// Inactivity Timeout
+static float inactivity_timer, inactivity_timeout;
+
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
@@ -308,6 +311,19 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		erpm_sign = -1;
 	else
 		erpm_sign = 1;
+
+	switch (app_get_configuration()->shutdown_mode) {
+	case SHUTDOWN_MODE_OFF_AFTER_10S: inactivity_timeout = 10; break;
+	case SHUTDOWN_MODE_OFF_AFTER_1M: inactivity_timeout = 60; break;
+	case SHUTDOWN_MODE_OFF_AFTER_5M: inactivity_timeout = 60 * 5; break;
+	case SHUTDOWN_MODE_OFF_AFTER_10M: inactivity_timeout = 60 * 10; break;
+	case SHUTDOWN_MODE_OFF_AFTER_30M: inactivity_timeout = 60 * 30; break;
+	case SHUTDOWN_MODE_OFF_AFTER_1H: inactivity_timeout = 60 * 60; break;
+	case SHUTDOWN_MODE_OFF_AFTER_5H: inactivity_timeout = 60 * 60 * 5; break;
+	default:
+		inactivity_timeout = 0;
+	}
+	inactivity_timer = -1;
 }
 
 void app_balance_start(void) {
@@ -1027,12 +1043,15 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 #endif
 				}
+				inactivity_timer = -1;
 				break;
+
 			case (RUNNING):
 			case (RUNNING_TILTBACK_DUTY):
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
 				log_balance_state = state + 100 * setpointAdjustmentType;
+				inactivity_timer = -1;
 
 				// Check for faults
 				if(check_faults(false)){
@@ -1126,6 +1145,29 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_STARTUP):
 				if (log_balance_state != FAULT_DUTY)
 					log_balance_state = state;
+
+				if (inactivity_timer == -1)
+					inactivity_timer = current_time;
+
+				if ((inactivity_timeout > 0) &&
+					(ST2S(current_time - inactivity_timer) > inactivity_timeout)){
+
+					// triple-beep
+					beep_on(true);
+					chThdSleepMilliseconds(200);
+					beep_off(true);
+					chThdSleepMilliseconds(100);
+					beep_on(true);
+					chThdSleepMilliseconds(200);
+					beep_off(true);
+					chThdSleepMilliseconds(100);
+					beep_on(true);
+					chThdSleepMilliseconds(200);
+					beep_off(true);
+
+					inactivity_timeout = 10; // beep again in 10 seconds
+					inactivity_timer = current_time;
+				}
 
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
