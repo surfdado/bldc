@@ -121,7 +121,7 @@ static float tuntilt_boost_per_erpm, yaw_aggregate_target;
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
 static float gyro[3];
 static float duty_cycle, abs_duty_cycle;
-static float erpm, abs_erpm, avg_erpm;
+static float erpm, abs_erpm;
 static float motor_current;
 static float motor_position;
 static float adc1, adc2;
@@ -140,7 +140,6 @@ static float torquetilt_filtered_current, torquetilt_interpolated;
 static Biquad torquetilt_current_biquad, accel_biquad1, accel_biquad2;
 static float turntilt_target, turntilt_interpolated;
 static SetpointAdjustmentType setpointAdjustmentType;
-static float yaw_proportional, yaw_integral, yaw_derivative, yaw_last_proportional, yaw_pid_value, yaw_setpoint;
 static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer;
@@ -159,7 +158,7 @@ static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_exp
 float balance_integral, balance_setpoint, balance_atr, balance_carve, balance_ki;
 
 // Function Prototypes
-static void set_current(float current, float yaw_current);
+static void set_current(float current);
 static void terminal_render(int argc, const char **argv);
 static void terminal_sample(int argc, const char **argv);
 static void terminal_experiment(int argc, const char **argv);
@@ -346,7 +345,7 @@ void app_balance_stop(void) {
 		chThdTerminate(app_thread);
 		chThdWait(app_thread);
 	}
-	set_current(0, 0);
+	set_current(0);
 	terminal_unregister_callback(terminal_render);
 	terminal_unregister_callback(terminal_sample);
 }
@@ -390,8 +389,6 @@ static void reset_vars(void){
 	// Clear accumulated values.
 	integral = 0;
 	last_proportional = 0;
-	yaw_integral = 0;
-	yaw_last_proportional = 0;
 	d_pt1_lowpass_state = 0;
 	d_pt1_highpass_state = 0;
 	biquad_reset(&d_biquad_lowpass);
@@ -407,7 +404,6 @@ static void reset_vars(void){
 	turntilt_target = 0;
 	turntilt_interpolated = 0;
 	setpointAdjustmentType = CENTERING;
-	yaw_setpoint = 0;
 	state = RUNNING;
 	current_time = 0;
 	last_time = 0;
@@ -836,39 +832,15 @@ static void brake(void){
 	timeout_reset();
 	// Set current
 	mc_interface_set_brake_current(balance_conf.brake_current);
-	if(balance_conf.multi_esc){
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current_brake(msg->id, balance_conf.brake_current);
-			}
-		}
-	}
 }
 
-static void set_current(float current, float yaw_current){
+static void set_current(float current){
 	// Reset the timeout
 	timeout_reset();
-	// Set current
-	if(balance_conf.multi_esc){
-		// Set the current delay
-		mc_interface_set_current_off_delay(motor_timeout);
-		// Set Current
-		mc_interface_set_current(current + yaw_current);
-		// Can bus
-		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-			can_status_msg *msg = comm_can_get_status_msg_index(i);
-
-			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-				comm_can_set_current_off_delay(msg->id, current - yaw_current, motor_timeout);// Assume 2 motors, i don't know how to steer 3 anyways
-			}
-		}
-	} else {
-		// Set the current delay
-		mc_interface_set_current_off_delay(motor_timeout);
-		// Set Current
-		mc_interface_set_current(current);
-	}
+	// Set the current delay
+	mc_interface_set_current_off_delay(motor_timeout);
+	// Set Current
+	mc_interface_set_current(current);
 }
 
 static THD_FUNCTION(balance_thread, arg) {
@@ -927,16 +899,6 @@ static THD_FUNCTION(balance_thread, arg) {
 		acceleration = biquad_process(&accel_biquad2, acceleration);
 		last_erpm = smooth_erpm;
 
-		if(balance_conf.multi_esc){
-			avg_erpm = erpm;
-			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-				can_status_msg *msg = comm_can_get_status_msg_index(i);
-				if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-					avg_erpm += msg->rpm;
-				}
-			}
-			avg_erpm = avg_erpm/2;// Assume 2 motors, i don't know how to steer 3 anyways
-		}
 		adc1 = (((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG;
 #ifdef ADC_IND_EXT2
 		adc2 = (((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG;
@@ -1121,33 +1083,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				balance_atr = torquetilt_target;
 				balance_carve = turntilt_target;
 
-				if(balance_conf.multi_esc){
-					// Calculate setpoint
-					if(abs_duty_cycle < .02){
-						yaw_setpoint = 0;
-					} else if(avg_erpm < 0){
-						yaw_setpoint = (-balance_conf.roll_steer_kp * roll_angle) + (balance_conf.roll_steer_erpm_kp * roll_angle * avg_erpm);
-					} else{
-						yaw_setpoint = (balance_conf.roll_steer_kp * roll_angle) + (balance_conf.roll_steer_erpm_kp * roll_angle * avg_erpm);
-					}
-					// Do PID maths
-					yaw_proportional = yaw_setpoint - gyro[2];
-					yaw_integral = yaw_integral + yaw_proportional;
-					yaw_derivative = yaw_proportional - yaw_last_proportional;
-
-					yaw_pid_value = (balance_conf.yaw_kp * yaw_proportional) + (balance_conf.yaw_ki * yaw_integral) + (balance_conf.yaw_kd * yaw_derivative);
-
-					if(yaw_pid_value > balance_conf.yaw_current_clamp){
-						yaw_pid_value = balance_conf.yaw_current_clamp;
-					}else if(yaw_pid_value < -balance_conf.yaw_current_clamp){
-						yaw_pid_value = -balance_conf.yaw_current_clamp;
-					}
-
-					yaw_last_proportional = yaw_proportional;
-				}
-
 				// Output to motor
-				set_current(pid_value, yaw_pid_value);
+				set_current(pid_value);
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
