@@ -794,7 +794,7 @@ static void apply_torquetilt(void){
 	// grunt factor is always positive!
 	grunt_factor = fminf(torquetilt_filtered_current / (accel * 50.0), 20);
 	grunt_filtered = grunt_filtered * 0.8 + grunt_factor * 0.2;
-	if (grunt_filtered > 1)
+	if (grunt_filtered > 2)
 		grunt_aggregate += grunt_filtered;
 	else
 		grunt_aggregate /= 2;
@@ -802,8 +802,8 @@ static void apply_torquetilt(void){
 	if (grunt_aggregate > grunt_threshold) {
 		/*float*/ atr_intensity = 1;	// this can be a local variable ultimately
 		grunt_filtered = fabsf(grunt_filtered);
-		if (grunt_filtered < 7)
-			atr_intensity = (grunt_filtered + 3) / 10;
+		if (grunt_filtered < 9)
+			atr_intensity = (grunt_filtered + 3) / 12;
 
 		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
