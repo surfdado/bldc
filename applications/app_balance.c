@@ -95,6 +95,8 @@ static float startup_step_size;
 static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_size, tiltback_return_step_size;
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
+static float tiltback_variable, tiltback_variable_max_erpm;
+static float tt_pid_intensity;
 static bool allow_high_speed_full_switch_faults;
 
 // Feature: Reverse Stop
@@ -267,6 +269,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	kp_brk = kp_acc;
 	ki_brk = ki_acc;
 	kd_brk = kd_acc;
+
+	tt_pid_intensity = balance_conf.kd_pt1_highpass_frequency;
 
 	// Init Filters
 	if(balance_conf.loop_time_filter > 0){
@@ -1089,27 +1093,54 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Switch between breaking PIDs and acceleration PIDs
 				float kp_target, ki_target, kd_target;
-				if (SIGN(pid_value) == SIGN(erpm)) {
+				if ((SIGN(proportional) == SIGN(erpm)) || (torquetilt_interpolated > -0.2)) {
+					// acceleration
+					kp_target = kp_acc;
+					ki_target = ki_acc;
+					kd_target = kd_acc;
+					// acceleration
+					float kp_multiplier = 0;
+					float ki_multiplier = 0;
+					/*if ((abs_erpm > 2000) && use_pid_speed_multiplier) {
+						// speed stiffness
+						kp_multiplier = 1 + (abs_erpm - 2000) * 0.00005;
+						ki_multiplier = 1 + (abs_erpm - 2000) * 0.0001;
+						}*/
+					if (fabsf(torquetilt_interpolated) > 0) {
+						// torque stiffness
+						kp_multiplier = fabsf(torquetilt_interpolated) / (6*2) * tt_pid_intensity;
+						ki_multiplier = kp_multiplier * 2;
+					}
+					kp_multiplier = fminf(1 + kp_multiplier, 1.5);
+					ki_multiplier = fminf(1 + ki_multiplier, 2);
+					kp_target = kp_acc * kp_multiplier;
+					ki_target = ki_acc * ki_multiplier;
+					kd_target = kd_acc * kp_multiplier;
+				}
+				else {
 					// braking
 					kp_target = kp_brk;
 					ki_target = ki_brk;
 					kd_target = kd_brk;
 				}
-				else {
-					// acceleration
-					kp_target = kp_acc;
-					ki_target = ki_acc;
-					kd_target = kd_acc;
-				}
 				if (setpointAdjustmentType == REVERSESTOP) {
 					kp_target = 2;
+					kd_target = 400;
 					integral = 0;
 				}
 
-				// Use filtering to avoid sudden changes in PID values
-				kp = kp * 0.997 + kp_target * 0.003;
-				ki = ki * 0.997 + ki_target * 0.003;
-				kd = kd * 0.997 + kd_target * 0.003;
+				if (kp_target > kp) {
+					// stiffen quickly
+					kp = kp * 0.99 + kp_target * 0.01;
+					ki = ki * 0.99 + ki_target * 0.01;
+					kd = kd * 0.99 + kd_target * 0.01;
+				}
+				else {
+					// loosen slowly
+					kp = kp * 0.999 + kp_target * 0.001;
+					ki = ki * 0.999 + ki_target * 0.001;
+					kd = kd * 0.999 + kd_target * 0.001;
+				}
 
 				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
