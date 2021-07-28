@@ -333,7 +333,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Lock:
 	lock_state = -1;
-	is_locked = false;;
+	is_locked = balance_conf.multi_esc;
 }
 
 void app_balance_start(void) {
@@ -1257,12 +1257,15 @@ static void check_lock() {
 		else if (adc2 > balance_conf.fault_adc2) lock_state = 8;
 		break;
 	case 8:
-		is_locked = !is_locked;
 		lock_state = -1;
-		if (is_locked)
+		is_locked = !is_locked;				// change lock from locked to non-locked or back
+		commands_balance_lock(is_locked);	// store to flash (in balance_conf.multi_esc)
+		if (is_locked) {
 			beep_alert(2, 1);	// beeeep-beeeep
-		else
+		}
+		else {
 			beep_alert(3, 0);	// beep-beep-beep
+		}
 		break;
 	default:;
 	}
