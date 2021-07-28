@@ -2311,3 +2311,11 @@ static THD_FUNCTION(blocking_thread, arg) {
 		}
 	}
 }
+
+void commands_balance_lock(bool lock)
+{
+	app_configuration *appconf = mempools_alloc_appconf();
+	*appconf = *app_get_configuration();
+	appconf->app_balance_conf.multi_esc = lock;
+	conf_general_store_app_configuration(appconf);
+}
