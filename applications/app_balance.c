@@ -152,6 +152,10 @@ static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
 static systime_t brake_timeout;
 
+// Lock
+static int lock_state;
+static bool is_locked;
+
 // Debug values
 static int debug_render_1, debug_render_2;
 static int debug_sample_field, debug_sample_count, debug_sample_index;
@@ -176,6 +180,7 @@ static void terminal_experiment(int argc, const char **argv);
 static float app_balance_get_debug(int index);
 static void app_balance_sample_debug(void);
 static void app_balance_experiment(void);
+static void check_lock(void);
 
 // Utility Functions
 float biquad_process(Biquad *biquad, float in) {
@@ -334,6 +339,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		inactivity_timeout = 0;
 	}
 	inactivity_timer = -1;
+
+	// Lock:
+	lock_state = -1;
+	is_locked = false;;
 
 	// Micro-Logging
 	logidx = 0;
@@ -1260,8 +1269,12 @@ static THD_FUNCTION(balance_thread, arg) {
 					inactivity_timer = current_time;
 				}
 
+				check_lock();
+
 				// Check for valid startup position and switch state
-				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
+				if(is_locked == false &&
+				   fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance &&
+				   fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
 					reset_vars();
 					break;
 				}
@@ -1292,6 +1305,48 @@ static THD_FUNCTION(balance_thread, arg) {
 
 	// Disable output
 	brake();
+}
+
+/**
+ * check_lock:	perform lock management
+ */
+static void check_lock() {
+	switch(lock_state) {
+	case -1: if (switch_state == ON) lock_state = 0;
+		break;
+	case 0: if (switch_state == OFF) lock_state = 1;
+		break;
+	case 1: if (adc2 > balance_conf.fault_adc2) lock_state = -1;
+		else if (adc1 > balance_conf.fault_adc1) lock_state = 2;
+		break;
+	case 2: if ((adc2 > balance_conf.fault_adc2) || switch_state == ON) lock_state = -1;
+		else if (switch_state == OFF) lock_state = 3;
+		break;
+	case 3: if (adc1 > balance_conf.fault_adc1) lock_state = -1;
+		else if (adc2 > balance_conf.fault_adc2) lock_state = 4;
+		break;
+	case 4: if ((adc1 > balance_conf.fault_adc1) || switch_state == ON) lock_state = -1;
+		else if (switch_state == OFF) lock_state = 5;
+		break;
+	case 5: if (adc2 > balance_conf.fault_adc2) lock_state = -1;
+		else if (adc1 > balance_conf.fault_adc1) lock_state = 6;
+		break;
+	case 6: if ((adc2 > balance_conf.fault_adc2) || switch_state == ON) lock_state = -1;
+		else if (switch_state == OFF) lock_state = 7;
+		break;
+	case 7: if (adc1 > balance_conf.fault_adc1) lock_state = -1;
+		else if (adc2 > balance_conf.fault_adc2) lock_state = 8;
+		break;
+	case 8:
+		is_locked = !is_locked;
+		lock_state = -1;
+		if (is_locked)
+			beep_alert(2, 1);	// beeeep-beeeep
+		else
+			beep_alert(3, 0);	// beep-beep-beep
+		break;
+	default:;
+	}
 }
 
 // Terminal commands
