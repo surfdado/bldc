@@ -113,6 +113,7 @@ static float motor_current;
 static float motor_position;
 static float adc1, adc2;
 static SwitchState switch_state;
+static int erpm_sign;
 
 // Turntilt
 float last_yaw_angle, yaw_angle, yaw_change, yaw_aggregate, yaw_aggregate_target;
@@ -317,6 +318,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		if (tbrest == 1)
 			tiltback_erpmbased = tiltback_constant / 10000;
 	}
+
+	if (mc_interface_get_configuration()->m_invert_direction)
+		erpm_sign = -1;
+	else
+		erpm_sign = 1;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: autosuspend_timeout = 10; break;
