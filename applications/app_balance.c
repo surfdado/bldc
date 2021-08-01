@@ -1241,15 +1241,15 @@ static THD_FUNCTION(balance_thread, arg) {
 					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+100)) || (logidx > 0)) {
 						logdelaycounter++;
 						b0 += pitch_angle;
-						b1 += atr_intensity;
+						b1 += acceleration;//atr_intensity;
 						b2 += grunt_filtered;
-						b3 += kp;//acceleration;	// ERPM Acceleration
+						b3 += kp; // ERPM Acceleration
 						b4 += torquetilt_target;//acc[0];		// IMU Acceleration;
 						b5 += setpoint;
 						b6 += last_erpm;
 						b7 = fmaxf(b7, grunt_aggregate);
 						b8 = integral;
-						b9 += pid_value;//integral;
+						b9 += pid_value;
 
 						if (logdelaycounter >= logperiod) {
 							logdelaycounter = 0;
