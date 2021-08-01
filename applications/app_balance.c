@@ -41,6 +41,9 @@
 // Can
 #define MAX_CAN_AGE 0.1
 
+// Acceleration average
+#define ACCEL_ARRAY_SIZE 40
+
 // Data type (Value 5 was removed, and can be reused at a later date, but i wanted to preserve the current value's numbers for UIs)
 typedef enum {
 	STARTUP = 0,
@@ -110,7 +113,7 @@ static systime_t softstart_timer;
 static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
-static float acceleration, acceleration1, acceleration2, last_erpm, shedfactor;
+static float acceleration, acceleration_raw, last_erpm, shedfactor;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
 static float torquetilt_target;
 static int erpm_sign;
@@ -142,7 +145,7 @@ static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float noseangling_interpolated;
 static float torquetilt_filtered_current, torquetilt_interpolated;
-static Biquad torquetilt_current_biquad, accel_biquad1, accel_biquad2;
+static Biquad torquetilt_current_biquad, accel_biquad;
 static float turntilt_target, turntilt_interpolated;
 static SetpointAdjustmentType setpointAdjustmentType;
 static systime_t current_time, last_time, diff_time, loop_overshoot;
@@ -152,6 +155,9 @@ static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
 static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
 static systime_t brake_timeout;
+static float accelhist[ACCEL_ARRAY_SIZE];
+static int accelidx;
+static float accelavg;
 
 // Lock
 static int lock_state;
@@ -184,7 +190,7 @@ float biquad_process(Biquad *biquad, float in) {
 }
 void biquad_config(Biquad *biquad, BiquadType type, float Fc) {
 	float K = tanf(M_PI * Fc);	// -0.0159;
-	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float Q = 0.5; // maximum sharpness (0.5 = maximum smoothness)
 	float norm = 1 / (1 + K / Q + K * K);
 	if (type == BQ_LOWPASS) {
 		biquad->a0 = K * K * norm;
@@ -304,9 +310,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		cutoff_freq = 10;
 	if (cutoff_freq > 100)
 		cutoff_freq = 100;
-	biquad_config(&accel_biquad1, BQ_LOWPASS, cutoff_freq / ((float)balance_conf.hertz));
-	// 2nd biquad filter @50Hz (don't ask me why this works better than a single filter)
-	biquad_config(&accel_biquad2, BQ_LOWPASS, 50 / ((float)balance_conf.hertz));
+	biquad_config(&accel_biquad, BQ_LOWPASS, cutoff_freq / ((float)balance_conf.hertz));
 
 	// Variable nose angle adjustment / tiltback (setting is per 1000erpm, convert to per erpm)
 	tiltback_variable = balance_conf.tiltback_variable / 1000;
@@ -430,11 +434,15 @@ static void reset_vars(void){
 	brake_timeout = 0;
 
 	// ATR:
-	biquad_reset(&accel_biquad1);
-	biquad_reset(&accel_biquad2);
+	biquad_reset(&accel_biquad);
 	grunt_aggregate = 0;
 	grunt_filtered = 0;
 	pid_value = 0;
+
+	for (int i=0; i<40; i++)
+		accelhist[i] = 0;
+	accelidx = 0;
+	accelavg = 0;
 
 	// Start with a minimal backwards push
 	float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
@@ -1011,9 +1019,8 @@ static THD_FUNCTION(balance_thread, arg) {
 			yaw_aggregate += yaw_change;
 
 		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
-		acceleration2 = smooth_erpm - last_erpm;
-		acceleration1 = biquad_process(&accel_biquad1, acceleration2);
-		acceleration = biquad_process(&accel_biquad2, acceleration1);
+		acceleration_raw = smooth_erpm - last_erpm;
+		//acceleration = biquad_process(&accel_biquad, acceleration_raw);
 		last_erpm = smooth_erpm;
 
 		accelavg += (acceleration_raw - accelhist[accelidx]) / ACCEL_ARRAY_SIZE;
