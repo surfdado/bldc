@@ -253,7 +253,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	allow_high_speed_full_switch_faults = (delay_rest != 1);
 
 	// Feature: ATR
-	shedfactor = balance_conf.yaw_kp;
+	shedfactor = 0.996;
 	// guardrails:
 	if (shedfactor > 1)
 		shedfactor = 0.99;
