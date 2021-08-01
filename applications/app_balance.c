@@ -99,7 +99,7 @@ static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_si
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm;
-static float tt_pid_intensity;
+static float tt_pid_intensity, tt_strength_accel, tt_strength_brake, integral_tt_ratio;
 static bool allow_high_speed_full_switch_faults;
 static float mc_current_max, mc_current_min;
 static float mc_max_temp_fet;
@@ -278,7 +278,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	ki_brk = ki_acc;
 	kd_brk = kd_acc;
 
-	tt_pid_intensity = balance_conf.kd_pt1_highpass_frequency;
+	tt_pid_intensity = balance_conf.torquetilt_start_current;
+	tt_pid_intensity = fminf(tt_pid_intensity, 4);
+
+	tt_strength_accel = balance_conf.torquetilt_strength;
+	tt_strength_brake = balance_conf.torquetilt_strength * (1 + balance_conf.yaw_kp / 100);
 
 	// Init Filters
 	if(balance_conf.loop_time_filter > 0){
@@ -304,6 +308,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 	}
+
+	// Any value above 0 will increase the board angle to match the slope
+	integral_tt_ratio = (float)balance_conf.kd_pt1_highpass_frequency  / 100.0;
 
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
@@ -788,15 +795,17 @@ static void apply_noseangling(void){
 }
 
 static void apply_torquetilt(void){
-	// Skip torque tilt logic if start current is 0
-	if (balance_conf.torquetilt_start_current == 0)
+	// Skip torque tilt logic if strength is 0
+	if (balance_conf.torquetilt_strength == 0)
 		return;
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
+	float torquetilt_strength = tt_strength_accel;
 
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
-		//start_current = torquetilt_brk_start_current;
+		// high currents downhill are less likely
+		torquetilt_strength = tt_strength_brake;
 	}
 
 	// grunt is a measure of how much we're struggling to produce acceleration
@@ -821,54 +830,49 @@ static void apply_torquetilt(void){
 		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
 		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
 		// Finally multiply it by sign motor current to get directionality back
-		torquetilt_target = fabsf(torquetilt_filtered_current) * balance_conf.torquetilt_strength;
+		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength;
+		torquetilt_target *= atr_intensity;
 		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
 		torquetilt_target *= SIGN(torquetilt_filtered_current);
-		torquetilt_target *= atr_intensity;
 	}
 	else {
 		// If the aggregate grunt is below the ratio then we must be just accelerating. No TT here!!
 		torquetilt_target = 0;
 	}
-	//ttt = torquetilt_target;
-
-	// don't get the board too "excited", don't let the nose rise much above 0 ;)
-	float max_tilt = 0;//balance_conf.torquetilt_angle_limit / 4;
-	bool nose_is_up = (SIGN(last_proportional - torquetilt_interpolated) != SIGN(torquetilt_target));
-	float actual_tilt = fabsf(last_proportional - torquetilt_interpolated);
-	if (nose_is_up && (fabsf(torquetilt_target) > 0) && (actual_tilt > max_tilt)) {
-		torquetilt_target = torquetilt_target - SIGN(torquetilt_target) * actual_tilt * 0.6;
-	}
 
 	// Deal with integral windup
-	if (SIGN(integral) != SIGN(erpm)) { // integral windup after braking
-		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000) && (fabsf(pid_value) < 2)) {
-			// we are back to 0 ttt, current is small, yet integral windup is high:
-			// resort to brute force integral windup mitigation, shed 1% each cycle:
-			// at any speeds
-			integral = integral * shedfactor;
-		}
-	}
-	else {
-		// integral windup after acceleration
-		// we usually don't want to mess with integral windup after accelerating - that's what
-		// helps give the onewheel its soft brake feel!
-		// there's a few exceptions though:
-		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
-		// b) when going up a hill instantly followed by a steep decline - integral windup
-		//    will cause a delayed braking response, resulting in a taildrag
-
-		if ((torquetilt_target == 0)  && (fabsf(integral) > 2000)) {
-			// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
-			if ((SIGN(pitch_angle) == SIGN(erpm)) && (fabsf(erpm) < 1000)) {
+	if (fabsf(integral) > 2000) {
+		int sign_erpm = SIGN(erpm);
+		if (SIGN(integral) != sign_erpm) { // integral windup after braking
+			if ((torquetilt_target >= 0) && (SIGN(pid_value) == sign_erpm) && (pid_value > 10)) {
+			//if ((torquetilt_target == 0) && (fabsf(pid_value) < 2)) {
 				// we are back to 0 ttt, current is small, yet integral windup is high:
-				// resort to brute force integral windup mitigation, shed 1% each cycle:
-				// but only at low speeds (below 4mph)
-				integral *= shedfactor;
-				torquetilt_interpolated *= shedfactor;
+				// resort to brute force integral windup mitigation, shed a tiny fraction each cycle:
+				// at any speeds
+				integral = integral * shedfactor;
 			}
-			// This here is for (b)
-			// ???
+		}
+		else {
+			// integral windup after acceleration
+			// we usually don't want to mess with integral windup after accelerating - that's what
+			// helps give the onewheel its soft brake feel!
+			// there's a few exceptions though:
+			// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
+			// b) when going up a hill instantly followed by a steep decline - integral windup
+			//    will cause a delayed braking response, resulting in a taildrag
+
+			if (torquetilt_target == 0) {
+				// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
+				if ((SIGN(pitch_angle) == sign_erpm) && (fabsf(erpm) < 1000)) {
+					// we are back to 0 ttt, current is small, yet integral windup is high:
+					// resort to brute force integral windup mitigation, shed 1% each cycle:
+					// but only at low speeds (below 4mph)
+					//integral *= shedfactor;
+					torquetilt_interpolated *= shedfactor;
+				}
+				// This here is for (b)
+				// ???
+			}
 		}
 	}
 
@@ -898,7 +902,7 @@ static void apply_torquetilt(void){
 
 static void apply_turntilt(void){
 	// Apply cutzone
-	if(abs_yaw_change * 100 < balance_conf.turntilt_start_angle){
+	if((abs_yaw_change * 100 < balance_conf.turntilt_start_angle) || (state != RUNNING)) {
 		turntilt_target = 0;
 	}
 	else {
@@ -1112,13 +1116,14 @@ static THD_FUNCTION(balance_thread, arg) {
 				if ((setpointAdjustmentType != CENTERING) && (setpointAdjustmentType != REVERSESTOP)) {
 					apply_noseangling();	// Always do nose angling, even during tiltback situations
 					apply_torquetilt();		// Torquetilt remains in effect even during tiltback situations
-					if (state == RUNNING)
-						apply_turntilt();
+					apply_turntilt();
 				}
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
-				integral = integral + proportional;
+				integral = integral + proportional
+					- turntilt_interpolated
+					- torquetilt_interpolated * (1 - integral_tt_ratio);
 				derivative = last_pitch_angle - pitch_angle;
 
 				// Apply D term filter
@@ -1147,8 +1152,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					kp_multiplier = fminf(1 + kp_multiplier, 1.5);
 					ki_multiplier = fminf(1 + ki_multiplier, 2);
-					kp_target = kp_acc * kp_multiplier;
-					ki_target = ki_acc * ki_multiplier;
+					kp_target = kp_acc * ki_multiplier;
+					ki_target = ki_acc * kp_multiplier;
 					kd_target = kd_acc * kp_multiplier;
 				}
 				else {
