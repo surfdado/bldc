@@ -101,6 +101,7 @@ static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_siz
 static float tiltback_variable, tiltback_variable_max_erpm;
 static float tt_pid_intensity;
 static bool allow_high_speed_full_switch_faults;
+static float mc_current_max, mc_current_min;
 
 // Feature: Reverse Stop
 static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
@@ -328,6 +329,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		erpm_sign = -1;
 	else
 		erpm_sign = 1;
+
+	mc_current_max = mc_interface_get_configuration()->l_current_max;
+	mc_current_min = mc_interface_get_configuration()->l_current_min;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: inactivity_timeout = 10; break;
@@ -1187,6 +1191,18 @@ static THD_FUNCTION(balance_thread, arg) {
 				balance_carve = turntilt_target;
 
 				// Output to motor
+				if (pid_value > mc_current_max) {
+					pid_value = mc_current_max - 3;
+					beep_on(1);
+				}
+				else if (pid_value < mc_current_min) {
+					pid_value = mc_current_min + 3;
+					beep_on(1);
+				}
+				else {
+					beep_off(0);
+				}
+
 				set_current(pid_value);
 				break;
 			case (FAULT_ANGLE_PITCH):
