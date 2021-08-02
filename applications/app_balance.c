@@ -117,7 +117,7 @@ static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
-static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
+static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, accel_deficit;
 static float torquetilt_target;
 static int erpm_sign;
 
@@ -825,38 +825,45 @@ static void apply_torquetilt(void){
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 	float torquetilt_strength = tt_strength_accel;
+	float accel_factor = 12;
 
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
 		// high currents downhill are less likely
 		torquetilt_strength = tt_strength_brake;
+		accel_factor = 8;
 	}
 
-	// grunt is a measure of how much we're struggling to produce acceleration
-	float accel = acceleration;
+	// compare measured acceleration to expected acceleration
+	float measured_acc = acceleration;
 	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
-	if (SIGN(accel) != SIGN(torquetilt_filtered_current))
-		accel = SIGN(torquetilt_filtered_current) * 0.05;
+	if (SIGN(measured_acc) != SIGN(torquetilt_filtered_current))
+		measured_acc = SIGN(torquetilt_filtered_current) * 0.05;
+
+	// expected acceleration is proportional to current
+	float expected_acc = torquetilt_filtered_current / accel_factor;
+
+	// grunt is a measure of how much we're struggling to produce acceleration
 	// grunt factor is always positive!
-	grunt_factor = fminf(torquetilt_filtered_current / (accel * 50.0), 20);
-	grunt_filtered = grunt_filtered * 0.8 + grunt_factor * 0.2;
-	if (grunt_filtered > 2)
+	grunt_factor = fminf(expected_acc / measured_acc, 20.0);
+	grunt_filtered = grunt_filtered * 0.9 + grunt_factor * 0.1;
+	if (grunt_filtered > 1)
 		grunt_aggregate += grunt_filtered;
 	else
-		grunt_aggregate /= 2;
+		grunt_aggregate /= 3;
 
 	if (grunt_aggregate > grunt_threshold) {
-		/*float*/ atr_intensity = 1;	// this can be a local variable ultimately
+		grunt_aggregate = fminf(grunt_aggregate, 20000); // limit to equivalent of 1 second of max grunt
+		/*float*/ accel_deficit = 1;	// this can be a local variable ultimately
 		grunt_filtered = fabsf(grunt_filtered);
 		if (grunt_filtered < 9)
-			atr_intensity = (grunt_filtered + 3) / 12;
+			accel_deficit = (grunt_filtered) / 9;
 
-		// Take abs motor current, subtract start offset, and take the max of that with 0 to get the current above our start threshold (absolute).
-		// Then multiply it by "power" to get our desired angle, and min with the limit to respect boundaries.
-		// Finally multiply it by sign motor current to get directionality back
-		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength;
-		torquetilt_target *= atr_intensity;
+		// Take abs motor current, multiply it by "power" to get our desired angle,
+		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength * accel_deficit;
+		// min with the limit to respect boundaries.
 		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
+		// Finally multiply it by sign motor current to get directionality back
 		torquetilt_target *= SIGN(torquetilt_filtered_current);
 	}
 	else {
