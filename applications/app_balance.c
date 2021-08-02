@@ -57,7 +57,8 @@ typedef enum {
 	FAULT_SWITCH_HALF = 8,
 	FAULT_SWITCH_FULL = 9,
 	FAULT_DUTY = 10,
-	FAULT_STARTUP = 11
+	FAULT_STARTUP = 11,
+	FAULT_REVERSE = 12
 } BalanceState;
 
 typedef enum {
@@ -628,18 +629,26 @@ static bool check_faults(bool ignoreTimers){
 	// Feature: Reverse-Stop
 	if(setpointAdjustmentType == REVERSESTOP){
 		//  Taking your foot off entirely while reversing? Ignore delays
-		if ((fabsf(pitch_angle) > 15) || (switch_state == OFF)) {
+		if (switch_state == OFF) {
 			state = FAULT_SWITCH_FULL;
+			return true;
+		}
+		if (fabsf(pitch_angle) > 15) {
+			state = FAULT_REVERSE;
 			return true;
 		}
 		// Above 10 degrees for a half a second? Switch it off
 		if ((fabsf(pitch_angle) > 10) && (ST2MS(current_time - reverse_timer) > 500)) {
-			state = FAULT_SWITCH_FULL;
+			state = FAULT_REVERSE;
 			return true;
 		}
 		// Above 5 degrees for a full second? Switch it off
 		if ((fabsf(pitch_angle) > 5) && (ST2MS(current_time - reverse_timer) > 1000)) {
-			state = FAULT_SWITCH_FULL;
+			state = FAULT_REVERSE;
+			return true;
+		}
+		if (reverse_total_erpm > reverse_tolerance * 3) {
+			state = FAULT_REVERSE;
 			return true;
 		}
 		if (fabsf(pitch_angle) < 5) {
@@ -1331,6 +1340,7 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
 			case (FAULT_STARTUP):
+			case (FAULT_REVERSE):
 				if (log_balance_state != FAULT_DUTY)
 					log_balance_state = state;
 
