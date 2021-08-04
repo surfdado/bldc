@@ -118,7 +118,7 @@ static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
-static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, accel_deficit;
+static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, tt_scaling;
 static float torquetilt_target;
 static int erpm_sign;
 
@@ -277,7 +277,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// minimum aggregate grunt to start torque tilt
 	grunt_threshold = balance_conf.yaw_kd;
 	if (grunt_threshold < 10)
-		grunt_threshold = 50;
+		grunt_threshold = 100;
 
 	// Braking PID softness
 	int brake_pid_scaling = balance_conf.kd_pt1_highpass_frequency;
@@ -846,27 +846,33 @@ static void apply_torquetilt(void){
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 	float torquetilt_strength = tt_strength_accel;
-	float accel_factor = 12;
+	float accel_factor = 10;
+	bool braking = false;
 
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
 		// high currents downhill are less likely
 		torquetilt_strength = tt_strength_brake;
-		accel_factor = 8;
+		accel_factor = 10;
+		braking = true;
 	}
 
 	// compare measured acceleration to expected acceleration
 	float measured_acc = acceleration;
-	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
-	if (SIGN(measured_acc) != SIGN(torquetilt_filtered_current))
-		measured_acc = SIGN(torquetilt_filtered_current) * 0.05;
+	// expected acceleration is proportional to current (minus an offset, required to maintain speed)
+	float expected_acc = (torquetilt_filtered_current - 7) / accel_factor;
+	int expected_sign = SIGN(expected_acc);
 
-	// expected acceleration is proportional to current
-	float expected_acc = torquetilt_filtered_current / accel_factor;
+	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
+	// grunt factor is always positive!
+	if (SIGN(measured_acc) != expected_sign)
+		measured_acc = expected_sign * 0.05;
 
 	// grunt is a measure of how much we're struggling to produce acceleration
-	// grunt factor is always positive!
-	grunt_factor = fminf(expected_acc / measured_acc, 20.0);
+	const float MAXGRUNT = 12.0;
+	grunt_factor = fminf(expected_acc / measured_acc, MAXGRUNT);
+	if (grunt_factor < 0)
+		grunt_factor = MAXGRUNT;
 	grunt_filtered = grunt_filtered * 0.9 + grunt_factor * 0.1;
 	if (grunt_filtered > 1)
 		grunt_aggregate += grunt_filtered;
@@ -875,13 +881,13 @@ static void apply_torquetilt(void){
 
 	if (grunt_aggregate > grunt_threshold) {
 		grunt_aggregate = fminf(grunt_aggregate, 20000); // limit to equivalent of 1 second of max grunt
-		/*float*/ accel_deficit = 1;	// this can be a local variable ultimately
+		/*float*/ tt_scaling = 1;	// this can be a local variable ultimately
 		grunt_filtered = fabsf(grunt_filtered);
-		if (grunt_filtered < 9)
-			accel_deficit = (grunt_filtered) / 9;
+		// acceleration deficit < 1 means we are getting some acceleration but just not quite as much as expected
+		tt_scaling = (grunt_filtered) / MAXGRUNT;
 
 		// Take abs motor current, multiply it by "power" to get our desired angle,
-		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength * accel_deficit;
+		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength * tt_scaling;
 		// min with the limit to respect boundaries.
 		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
 		// Finally multiply it by sign motor current to get directionality back
@@ -893,38 +899,49 @@ static void apply_torquetilt(void){
 	}
 
 	// Deal with integral windup
-	if (fabsf(integral) > 2000) {
-		int sign_erpm = SIGN(erpm);
-		if (SIGN(integral) != sign_erpm) { // integral windup after braking
-			if ((torquetilt_target >= 0) && (SIGN(pid_value) == sign_erpm) && (pid_value > 10)) {
-			//if ((torquetilt_target == 0) && (fabsf(pid_value) < 2)) {
-				// we are back to 0 ttt, current is small, yet integral windup is high:
-				// resort to brute force integral windup mitigation, shed a tiny fraction each cycle:
-				// at any speeds
-				integral = integral * shedfactor;
+	int sign_erpm = SIGN(erpm);
+	if (SIGN(integral) != sign_erpm) { // integral windup after braking
+		if ((torquetilt_target >= 0) && (pid_value > 10)) {
+			// we are back to 0 ttt, current is small, yet integral windup is high:
+			// resort to brute force integral windup mitigation, shed a tiny fraction each cycle:
+			// at any speeds
+			if (torquetilt_interpolated < 0)
+				torquetilt_interpolated *= 0.98;
+			if (fabsf(integral) > 2000) {
+				integral *= shedfactor;
+				beep_on(1);
+			}
+			else {
+				beep_off(0);
 			}
 		}
-		else {
-			// integral windup after acceleration
-			// we usually don't want to mess with integral windup after accelerating - that's what
-			// helps give the onewheel its soft brake feel!
-			// there's a few exceptions though:
-			// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
-			// b) when going up a hill instantly followed by a steep decline - integral windup
-			//    will cause a delayed braking response, resulting in a taildrag
+	}
+	else {
+		// integral windup after acceleration
+		// we usually don't want to mess with integral windup after accelerating - that's what
+		// helps give the onewheel its soft brake feel!
+		// there's a few exceptions though:
+		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
+		// b) when going up a hill instantly followed by a steep decline - integral windup
+		//    will cause a delayed braking response, resulting in a taildrag
 
-			if (torquetilt_target == 0) {
-				// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
-				if ((SIGN(pitch_angle) == sign_erpm) && (fabsf(erpm) < 1000)) {
-					// we are back to 0 ttt, current is small, yet integral windup is high:
-					// resort to brute force integral windup mitigation, shed 1% each cycle:
-					// but only at low speeds (below 4mph)
-					//integral *= shedfactor;
-					torquetilt_interpolated *= shedfactor;
+		if (torquetilt_target == 0) {
+			// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
+			if ((SIGN(pitch_angle) == sign_erpm) && (fabsf(erpm) < 1000)) {
+				// we are back to 0 ttt, current is small, yet integral windup is high:
+				// resort to brute force integral windup mitigation, shed 1% each cycle:
+				// but only at low speeds (below 4mph)
+				if (fabsf(integral) > 2000) {
+					integral *= 0.998;
+					beep_on(1);
 				}
-				// This here is for (b)
-				// ???
+				else {
+					beep_off(0);
+				}
+				torquetilt_interpolated *= 0.99;//shedfactor;
 			}
+			// This here is for (b)
+			// ???
 		}
 	}
 
@@ -933,11 +950,9 @@ static void apply_torquetilt(void){
 	   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
 		step_size = torquetilt_off_step_size;
 	}else{
-		// reduce response speed at lower erpms
-		if (abs_erpm < 800)
+		// reduce response speed at lower erpms or when going downhill/braking
+		if ((abs_erpm < 800) || (braking))
 			step_size = torquetilt_on_step_size / 2;
-		else if (abs_erpm < 500)
-			step_size = torquetilt_on_step_size / 3;
 		else
 			step_size = torquetilt_on_step_size;
 	}
@@ -1184,7 +1199,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 0.2)) {
+				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
 					// acceleration
 					float kp_multiplier = 0;
 					float ki_multiplier = 0;
@@ -1200,8 +1215,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					kp_multiplier = fminf(1 + kp_multiplier, 1.5);
 					ki_multiplier = fminf(1 + ki_multiplier, 2);
-					kp_target = kp_acc * ki_multiplier;
-					ki_target = ki_acc * kp_multiplier;
+					kp_target = kp_acc;// * kp_multiplier;
+					ki_target = ki_acc * ki_multiplier;
 					kd_target = kd_acc * kp_multiplier;
 				}
 				else {
