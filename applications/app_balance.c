@@ -101,7 +101,7 @@ static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_si
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm;
-static float tt_pid_intensity, tt_strength_accel, tt_strength_brake, integral_tt_ratio;
+static float tt_pid_intensity, tt_strength_uphill, tt_strength_downhill, integral_tt_impact_uphill, integral_tt_impact_downhill;
 static bool allow_high_speed_full_switch_faults;
 static float mc_current_max, mc_current_min;
 static float mc_max_temp_fet;
@@ -306,8 +306,16 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tt_pid_intensity = balance_conf.torquetilt_start_current;
 	tt_pid_intensity = fminf(tt_pid_intensity, 4);
 
-	tt_strength_accel = balance_conf.torquetilt_strength;
-	tt_strength_brake = balance_conf.torquetilt_strength * (1 + balance_conf.yaw_kp / 100);
+	tt_strength_uphill = balance_conf.torquetilt_strength;
+	tt_strength_downhill = balance_conf.torquetilt_strength * (1 + balance_conf.yaw_kp / 100);
+
+	// Any value above 0 will increase the board angle to match the slope
+	integral_tt_impact_downhill = 1.0 - (float)balance_conf.kd_biquad_lowpass / 100.0;
+	integral_tt_impact_uphill = 1.0 - (float)balance_conf.kd_biquad_highpass / 100.0;
+	integral_tt_impact_downhill = fminf(integral_tt_impact_downhill, 1.0);
+	integral_tt_impact_downhill = fmaxf(integral_tt_impact_downhill, 0.0);
+	integral_tt_impact_uphill = fminf(integral_tt_impact_uphill, 1.0);
+	integral_tt_impact_uphill = fmaxf(integral_tt_impact_uphill, 0.0);
 
 	// Init Filters
 	if(balance_conf.loop_time_filter > 0){
@@ -333,9 +341,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 	}
-
-	// Any value above 0 will increase the board angle to match the slope
-	integral_tt_ratio = (float)balance_conf.kd_pt1_highpass_frequency  / 100.0;
 
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
@@ -845,15 +850,14 @@ static void apply_torquetilt(void){
 		return;
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
-	float torquetilt_strength = tt_strength_accel;
-	float accel_factor = 10;
+	float torquetilt_strength = tt_strength_uphill;
+	const float accel_factor = 10;
 	bool braking = false;
 
 	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
 		// current is negative, so we are braking or going downhill
 		// high currents downhill are less likely
-		torquetilt_strength = tt_strength_brake;
-		accel_factor = 10;
+		torquetilt_strength = tt_strength_downhill;
 		braking = true;
 	}
 
@@ -1188,12 +1192,27 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
-				integral = integral + proportional
-					- turntilt_interpolated
-					- torquetilt_interpolated * (1 - integral_tt_ratio);
-				derivative = last_pitch_angle - pitch_angle;
 
-				// Apply D term filter
+				// Integral component, only partially affected by torquetilt
+				integral = integral + proportional;
+				// Produce controlled nose/tail lift with increased torque
+				float tt_impact;
+				if (torquetilt_interpolated < 0)
+					// Downhill tail lift doesn't need to be as high as uphill nose lift
+					tt_impact = integral_tt_impact_downhill;
+				else {
+					tt_impact = integral_tt_impact_uphill;
+					if (abs_erpm < 4000) {
+						// Reduced nose lift at lower speeds
+						// Creates a value between 0.5 and 1.0
+						float erpm_scaling = fmaxf(0.5, abs_erpm / 4000);
+						tt_impact = (1.0 - (1.0 - tt_impact) * erpm_scaling);
+					}
+				}
+				integral -= torquetilt_interpolated * tt_impact;
+
+				// Derivative with D term PT1 filter
+				derivative = last_pitch_angle - pitch_angle;
 				d_pt1_lowpass_state = d_pt1_lowpass_state + d_pt1_lowpass_k * (derivative - d_pt1_lowpass_state);
 				derivative = d_pt1_lowpass_state;
 
