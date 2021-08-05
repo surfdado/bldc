@@ -1286,8 +1286,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				balance_integral = integral;
 				balance_ki = ki;
 				balance_setpoint = setpoint;
-				balance_atr = torquetilt_target;
-				balance_carve = turntilt_target;
+				balance_atr = torquetilt_interpolated;
+				balance_carve = turntilt_interpolated;
 
 				// LOG:
 				if (logidx < LOGBUFSIZE) {
