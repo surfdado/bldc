@@ -327,9 +327,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if(balance_conf.kd_pt1_lowpass_frequency >= 1){
 		dt_filter_freq = balance_conf.kd_pt1_lowpass_frequency;
 	}
-	else if(balance_conf.kd_biquad_lowpass >= 1){
-		dt_filter_freq = balance_conf.kd_biquad_lowpass;
-	}
 	if (dt_filter_freq > 30){
 		dt_filter_freq = 10;
 	}
