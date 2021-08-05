@@ -334,10 +334,14 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float RC = 1.0 / ( 2.0 * M_PI * dt_filter_freq);
 	d_pt1_lowpass_k =  dT / (RC + dT);
 
-	if(balance_conf.torquetilt_filter > 0){ // Torquetilt Current Biquad
-		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
-		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
-	}
+	// Torquetilt Current Biquad
+	float tt_filter = balance_conf.torquetilt_filter;
+	if (tt_filter == 0)
+		tt_filter = 5;
+	if (tt_filter > 30)
+		tt_filter = 30;
+	float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
+	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
