@@ -1216,24 +1216,19 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
 				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
-					// acceleration
-					float kp_multiplier = 0;
+					// acceleration and torquetilt situations
+					float kd_multiplier = 0;
 					float ki_multiplier = 0;
-					/*if ((abs_erpm > 2000) && use_pid_speed_multiplier) {
-						// speed stiffness
-						kp_multiplier = 1 + (abs_erpm - 2000) * 0.00005;
-						ki_multiplier = 1 + (abs_erpm - 2000) * 0.0001;
-						}*/
 					if (fabsf(torquetilt_interpolated) > 0) {
 						// torque stiffness
-						kp_multiplier = fabsf(torquetilt_interpolated) / (6*2) * tt_pid_intensity;
-						ki_multiplier = kp_multiplier * 2;
+						kd_multiplier = fabsf(torquetilt_interpolated) / (6*2) * tt_pid_intensity;
+						ki_multiplier = kd_multiplier * 2;
 					}
-					kp_multiplier = fminf(1 + kp_multiplier, 1.5);
+					kd_multiplier = fminf(1 + kd_multiplier, 1.5);
 					ki_multiplier = fminf(1 + ki_multiplier, 2);
-					kp_target = kp_acc;// * kp_multiplier;
+					kp_target = kp_acc;
 					ki_target = ki_acc * ki_multiplier;
-					kd_target = kd_acc * kp_multiplier;
+					kd_target = kd_acc * kd_multiplier;
 				}
 				else {
 					// braking
@@ -1247,6 +1242,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					integral = 0;
 				}
 
+				// Ensure smooth transition between different PID targets
 				if (kp_target > kp) {
 					// stiffen quickly
 					kp = kp * 0.99 + kp_target * 0.01;
