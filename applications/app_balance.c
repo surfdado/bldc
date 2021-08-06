@@ -182,6 +182,7 @@ static float app_balance_get_debug(int index);
 static void app_balance_sample_debug(void);
 static void app_balance_experiment(void);
 static void check_lock(void);
+static void play_tune(void);
 
 // Utility Functions
 float biquad_process(Biquad *biquad, float in) {
@@ -210,6 +211,23 @@ void biquad_config(Biquad *biquad, BiquadType type, float Fc) {
 void biquad_reset(Biquad *biquad) {
 	biquad->z1 = 0;
 	biquad->z2 = 0;
+}
+
+void play_tune() {
+	//wiggle the motor a little bit at different frequencies
+	float original_sw = mc_interface_get_configuration()->foc_f_sw;
+	float curr = 1;
+	int freqs[] = { 2093, 2637, 3135, 4186 };
+	for( unsigned int i = 0; i < sizeof(freqs)/sizeof(int); i++ ) {
+		mcpwm_foc_change_sw(freqs[i]);
+		mc_interface_set_current(curr);
+		chThdSleepMilliseconds(100);
+		mc_interface_set_current(0);
+		chThdSleepMilliseconds(10);
+		curr = -curr;
+	}
+	//go back to original switching frequency
+	mcpwm_foc_change_sw((int)original_sw);
 }
 
 // Exposed Functions
@@ -379,6 +397,8 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 void app_balance_start(void) {
 	// First start only, override state to startup
 	state = STARTUP;
+	if (balance_conf.deadzone == 0)
+		play_tune();
 	log_balance_state = state;
 	// Register terminal commands
 	terminal_register_command_callback(
