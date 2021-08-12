@@ -1326,12 +1326,12 @@ static THD_FUNCTION(balance_thread, arg) {
 						logdelaycounter++;
 						b0 += pitch_angle;
 						b1 += torquetilt_interpolated;
-						b2 += grunt_filtered;
+						b2 += acceleration;
 						b3 += ki;
-						b4 += torquetilt_target;
+						b4 += turntilt_interpolated;//torquetilt_target;
 						b5 += setpoint;
-						b6 += last_erpm;
-						b7 = turntilt_interpolated;//fmaxf(b7, grunt_aggregate);
+						b6 = fmaxf(b7, grunt_aggregate);//last_erpm;
+						b7 += grunt_filtered;//fmaxf(b7, grunt_aggregate);
 						b8 = integral;
 						b9 += torquetilt_filtered_current;//pid_value;
 
@@ -1358,8 +1358,8 @@ static THD_FUNCTION(balance_thread, arg) {
 							buf3[logidx] = b3 / logperiod;
 							buf4[logidx] = b4 / logperiod;
 							buf5[logidx] = b5 / logperiod;
-							buf6[logidx] = b6 / logperiod;
-							buf7[logidx] = b7;// / logperiod;
+							buf6[logidx] = b6;// / logperiod;
+							buf7[logidx] = b7 / logperiod;
 							buf8[logidx] = b8;// / logperiod;
 							buf9[logidx] = b9 / logperiod;
 							logidx++;
