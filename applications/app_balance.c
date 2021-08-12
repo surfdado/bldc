@@ -1378,7 +1378,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					else {
 						// re-arm logging after 5 seconds
-						if ((current_time - logtimer) > 5000) {
+						if (ST2S(current_time - logtimer) > 5) {
 							logidx = 0;
 						}
 					}
