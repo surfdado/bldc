@@ -404,21 +404,27 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	lock_state = -1;
 	is_locked = balance_conf.multi_esc;
 
-	// Micro-Logging
-	logidx = 0;
-	buf0[0] = 0;
-	buf1[0] = 0;
-	buf2[0] = 0;
-	buf3[0] = 0;
-	buf4[0] = 0;
-	buf5[0] = 0;
-	buf6[0] = 0;
-	buf7[0] = 0;
-	buf8[0] = 0;
-	buf9[0] = 0;
-	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 =0;
 	logperiod = (int) balance_conf.yaw_current_clamp;
-	logdelaycounter = 0;
+
+	// Micro-Logging
+	if (balance_conf.deadzone == 0) {
+		logidx = 0;
+		buf0[0] = 0;
+		buf1[0] = 0;
+		buf2[0] = 0;
+		buf3[0] = 0;
+		buf4[0] = 0;
+		buf5[0] = 0;
+		buf6[0] = 0;
+		buf7[0] = 0;
+		buf8[0] = 0;
+		buf9[0] = 0;
+		b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 =0;
+		logdelaycounter = 0;
+	}
+	else {
+		commands_reset_logidx();
+	}
 }
 
 void app_balance_start(void) {
