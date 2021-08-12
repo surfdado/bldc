@@ -86,6 +86,10 @@ extern float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSI
 extern float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
 static int logidx;
 
+void commands_reset_logidx() {
+	logidx = 0;
+}
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&send_buffer_mutex);
@@ -444,11 +448,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			if (buf1[0] == 5555) {
 				if (logidx < LOGBUFSIZE-1)
 					logidx++;
-				else
+				else {
 					buf0[0] = 1111;
-			}
-			else {
-				logidx = 0;
+					buf1[0] = 1111;
+					logidx = 0;
+				}
 			}
 		}
 		if (mask & ((uint32_t)1 << 15)) {

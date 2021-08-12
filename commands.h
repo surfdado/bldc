@@ -52,5 +52,6 @@ void commands_set_ble_pin(char* pin);
 void commands_send_plot_points(float x, float y);
 void commands_balance_lock(bool lock);
 int commands_get_fw_version_sent_cnt(void);
+void commands_reset_logidx(void);
 
 #endif /* COMMANDS_H_ */
