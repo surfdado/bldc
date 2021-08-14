@@ -117,7 +117,7 @@ static systime_t softstart_timer;
 static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
-static float acceleration, acceleration_raw, last_erpm, shedfactor;
+static float acceleration, acceleration_raw, last_erpm, shedfactor, dterm_limit, dterm_limit_damp;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, tt_scaling;
 static float torquetilt_target;
 static int erpm_sign;
@@ -361,9 +361,17 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
+	dterm_limit = balance_conf.roll_steer_kp;
+	int dl = (int) dterm_limit;
+	dterm_limit_damp = (dterm_limit - dl) * 100;
+	if (dterm_limit < 10)
+		dterm_limit = mc_interface_get_configuration()->l_current_max / 2;
+	if (dterm_limit_damp < 10)
+		dterm_limit_damp = mc_interface_get_configuration()->l_current_max / 2;
+
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
-	float cutoff_freq = balance_conf.roll_steer_kp;
+	float cutoff_freq = 50; // balance_conf.roll_steer_kp;
 	if (cutoff_freq < 10)
 		cutoff_freq = 10;
 	if (cutoff_freq > 100)
@@ -1295,7 +1303,14 @@ static THD_FUNCTION(balance_thread, arg) {
 					ki = 0;
 				}
 				else {
-					pid_value = (kp * proportional) + (ki * integral) + (kd * derivative);
+					float dterm = kd * derivative;
+					float dterm_max = dterm_limit;
+					if (SIGN(derivative) != SIGN(pid_value))
+						dterm_max = dterm_limit_damp;
+					if (fabsf(dterm) > dterm_max) {
+						dterm = SIGN(derivative) * dterm_max;
+					}
+					pid_value = pid_value * 0.9 + 0.1 * ((kp * proportional) + (ki * integral) + dterm);//(kd * derivative);
 				}
 
 				last_proportional = proportional;
