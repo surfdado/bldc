@@ -117,7 +117,7 @@ static systime_t softstart_timer;
 static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
-static float acceleration, acceleration_raw, last_erpm, shedfactor, dterm_limit, dterm_limit_damp;
+static float acceleration, acceleration_raw, last_erpm, shedfactor, max_brake_amps;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, tt_scaling;
 static float torquetilt_target;
 static int erpm_sign;
@@ -361,13 +361,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
-	dterm_limit = balance_conf.roll_steer_kp;
-	int dl = (int) dterm_limit;
-	dterm_limit_damp = (dterm_limit - dl) * 100;
-	if (dterm_limit < 10)
-		dterm_limit = mc_interface_get_configuration()->l_current_max / 2;
-	if (dterm_limit_damp < 10)
-		dterm_limit_damp = mc_interface_get_configuration()->l_current_max / 2;
+	max_brake_amps = balance_conf.roll_steer_kp;
+	if (max_brake_amps < 10)
+		max_brake_amps = mc_interface_get_configuration()->l_current_max / 2;
 
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
@@ -1303,14 +1299,23 @@ static THD_FUNCTION(balance_thread, arg) {
 					ki = 0;
 				}
 				else {
-					float dterm = kd * derivative;
-					float dterm_max = dterm_limit;
-					if (SIGN(derivative) != SIGN(pid_value))
-						dterm_max = dterm_limit_damp;
-					if (fabsf(dterm) > dterm_max) {
-						dterm = SIGN(derivative) * dterm_max;
+					float new_pd_value = (kp * proportional) + (kd * derivative);
+					if (SIGN(erpm) != SIGN(new_pd_value)) {
+						// limit P and D braking amps while slow on flat ground
+						float pid_max = max_brake_amps;
+						float tt = fabs(torquetilt_interpolated);
+						if (tt > 2) {
+							pid_max *= (0.75 + tt / 8);
+						}
+						if (abs_erpm > 2000) {
+							pid_max *= (0.8 + abs_erpm / 10000);
+						}
+						if (fabsf(pid_value) > pid_max) {
+							new_pd_value = SIGN(new_pd_value) * pid_max;
+						}
 					}
-					pid_value = pid_value * 0.9 + 0.1 * ((kp * proportional) + (ki * integral) + dterm);//(kd * derivative);
+					// smoothen out requested current (introduce ~10ms effective latency):
+					pid_value = 0.1 * (new_pd_value + (ki * integral)) + 0.9 * pid_value;
 				}
 
 				last_proportional = proportional;
