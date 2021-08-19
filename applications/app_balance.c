@@ -116,7 +116,7 @@ static systime_t softstart_timer;
 static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
-static float acceleration, acceleration_raw, last_erpm, shedfactor, max_brake_amps;
+static float acceleration, acceleration_raw, last_erpm, shedfactor;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, tt_scaling;
 static float torquetilt_target;
 static int erpm_sign;
@@ -124,6 +124,10 @@ static int erpm_sign;
 // Feature: Turntilt
 static float last_yaw_angle, yaw_angle, abs_yaw_change, yaw_change, yaw_aggregate;
 static float tuntilt_boost_per_erpm, yaw_aggregate_target;
+
+// Feature: PID toning
+float boost_angle, boost_kp_adder;
+float max_brake_amps, max_derivative;
 
 // Inactivity Timeout
 static float inactivity_timer, inactivity_timeout;
@@ -143,7 +147,7 @@ static BalanceState state;
 int log_balance_state; // not static so we can log it
 
 static float proportional, integral, derivative;
-static float last_proportional, abs_proportional;
+static float last_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float noseangling_interpolated;
@@ -352,9 +356,27 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
+	// Feature: PID Toning
+	boost_angle = balance_conf.booster_angle;
+	boost_kp_adder = balance_conf.booster_ramp - kp_acc;
+	if (boost_kp_adder < 0)
+		boost_kp_adder = 1;
+	if (boost_angle > 3)
+		boost_angle = 1;
+	if (balance_conf.booster_current > 0)
+		boost_kp_adder = 0;
+	else
+		boost_kp_adder = fminf(boost_kp_adder, 5);
+
+	// Roll-Steer KP controls max brake amps (for P+D) AND max derivative amps
 	max_brake_amps = balance_conf.roll_steer_kp;
 	if (max_brake_amps < 10)
 		max_brake_amps = mc_interface_get_configuration()->l_current_max / 2;
+
+	int mb = max_brake_amps;
+	max_derivative = 100 * (max_brake_amps - mb);
+	if (max_derivative < 10)
+		max_derivative = mc_interface_get_configuration()->l_current_max / 2;
 
 	// Feature: ATR
 	// Borrow "Roll-Steer KP" value to control the acceleration biquad low-pass filter:
@@ -1220,18 +1242,15 @@ static THD_FUNCTION(balance_thread, arg) {
 				float kp_target, ki_target, kd_target;
 				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
 					// acceleration and torquetilt situations
-					float kd_multiplier = 0;
-					float ki_multiplier = 0;
-					if (fabsf(torquetilt_interpolated) > 0) {
+					float ki_multiplier = 1;
+					if (fabsf(torquetilt_interpolated) > 2) {
 						// torque stiffness
-						kd_multiplier = fabsf(torquetilt_interpolated) / (6*2) * tt_pid_intensity;
-						ki_multiplier = kd_multiplier * 2;
+						ki_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
+						ki_multiplier = fminf(1 + ki_multiplier, 2);
 					}
-					kd_multiplier = fminf(1 + kd_multiplier, 1.5);
-					ki_multiplier = fminf(1 + ki_multiplier, 2);
 					kp_target = kp_acc;
 					ki_target = ki_acc * ki_multiplier;
-					kd_target = kd_acc * kd_multiplier;
+					kd_target = kd_acc;
 				}
 				else {
 					// braking
@@ -1246,7 +1265,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Ensure smooth transition between different PID targets
-				if (kp_target > kp) {
+				if (ki_target > ki) {
 					// stiffen quickly
 					kp = kp * 0.99 + kp_target * 0.01;
 					ki = ki * 0.99 + ki_target * 0.01;
@@ -1268,30 +1287,49 @@ static THD_FUNCTION(balance_thread, arg) {
 					ki = 0;
 				}
 				else {
-					float new_pd_value = (kp * proportional) + (kd * derivative);
+					// P:
+					// use higher kp for first few degrees of proportional to keep the board more stable
+					float pid_prop = kp * proportional;
+					float boost = fminf(fabsf(proportional), boost_angle);
+					pid_prop += boost * boost_kp_adder * SIGN(proportional);
+
+					// D:
+					float pid_derivative = kd * derivative;
+					if (fabsf(pid_derivative) > max_derivative) {
+						pid_derivative = max_derivative * SIGN(pid_derivative);
+					}
+
+					// Treat P+D together
+					float new_pd_value = pid_prop + pid_derivative;
 					if (SIGN(erpm) != SIGN(new_pd_value)) {
 						// limit P and D braking amps while slow on flat ground
-						float pid_max = max_brake_amps;
+						float pid_max = fmaxf(max_brake_amps, fabsf(pid_prop));
 						float tt = fabs(torquetilt_interpolated);
 						if (tt > 2) {
+							// increase pid_max with torque tilt
 							pid_max *= (0.75 + tt / 8);
 						}
 						if (abs_erpm > 2000) {
+							// increase pid_max with erpm
 							pid_max *= (0.8 + abs_erpm / 10000);
 						}
-						if (fabsf(pid_value) > pid_max) {
+						if (fabsf(new_pd_value) > pid_max) {
 							new_pd_value = SIGN(new_pd_value) * pid_max;
 						}
 					}
+
+					// I:
+					float pid_integral = ki * integral;
+
 					// smoothen out requested current (introduce ~10ms effective latency):
-					pid_value = 0.1 * (new_pd_value + (ki * integral)) + 0.9 * pid_value;
+					pid_value = 0.1 * (new_pd_value + pid_integral) + 0.9 * pid_value;
 				}
 
 				last_proportional = proportional;
 
 				// Apply Booster (but only for normal riding without LV/HV/Duty tiltback)
-				if (state == RUNNING) {
-					abs_proportional = fabsf(proportional);
+				if ((state == RUNNING) && (balance_conf.booster_current > 0)) {
+					float abs_proportional = fabsf(proportional);
 					if(abs_proportional > balance_conf.booster_angle){
 						if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
 							pid_value += (balance_conf.booster_current * SIGN(proportional)) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
