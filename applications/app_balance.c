@@ -1251,18 +1251,15 @@ static THD_FUNCTION(balance_thread, arg) {
 				float kp_target, ki_target, kd_target;
 				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
 					// acceleration and torquetilt situations
-					float kd_multiplier = 0;
-					float ki_multiplier = 0;
-					if (fabsf(torquetilt_interpolated) > 0) {
+					float ki_multiplier = 1;
+					if (fabsf(torquetilt_interpolated) > 2) {
 						// torque stiffness
-						kd_multiplier = fabsf(torquetilt_interpolated) / (6*2) * tt_pid_intensity;
-						ki_multiplier = kd_multiplier * 2;
+						ki_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
+						ki_multiplier = fminf(1 + ki_multiplier, 2);
 					}
-					kd_multiplier = fminf(1 + kd_multiplier, 1.5);
-					ki_multiplier = fminf(1 + ki_multiplier, 2);
 					kp_target = kp_acc;
 					ki_target = ki_acc * ki_multiplier;
-					kd_target = kd_acc * kd_multiplier;
+					kd_target = kd_acc;
 				}
 				else {
 					// braking
