@@ -452,6 +452,67 @@ static float get_setpoint_adjustment_step_size(void){
 	return 0;
 }
 
+// Read ADCs and determine switch state
+static SwitchState check_adcs(void)
+{
+	SwitchState sw_state;
+
+	adc1 = (((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG;
+#ifdef ADC_IND_EXT2
+	adc2 = (((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG;
+#else
+	adc2 = 0.0;
+#endif
+
+	// Calculate switch state from ADC values
+	if(balance_conf.fault_adc1 == 0 && balance_conf.fault_adc2 == 0){ // No Switch
+		sw_state = ON;
+	}else if(balance_conf.fault_adc2 == 0){ // Single switch on ADC1
+		if(adc1 > balance_conf.fault_adc1){
+			sw_state = ON;
+		} else {
+			sw_state = OFF;
+		}
+	}else if(balance_conf.fault_adc1 == 0){ // Single switch on ADC2
+		if(adc2 > balance_conf.fault_adc2){
+			sw_state = ON;
+		} else {
+			sw_state = OFF;
+		}
+	}else{ // Double switch
+		if(adc1 > balance_conf.fault_adc1 && adc2 > balance_conf.fault_adc2){
+			sw_state = ON;
+		}else if(adc1 > balance_conf.fault_adc1 || adc2 > balance_conf.fault_adc2){
+			sw_state = HALF;
+		}else{
+			sw_state = OFF;
+		}
+	}
+
+	/*
+	 * Use external buzzer to notify rider of foot switch faults at speed
+	 */
+	if (sw_state == OFF) {
+		if ((abs_erpm > balance_conf.fault_adc_half_erpm)
+			&& (state >= RUNNING)
+			&& (state <= RUNNING_TILTBACK_LOW_VOLTAGE))
+		{
+			// If we're at riding speed and the switch is off => ALERT the user
+			// set force=true since this could indicate an imminent shutdown/nosedive
+			beep_on(true);
+		}
+		else {
+			// if we drop below riding speed stop buzzing
+			beep_off(false);
+		}
+	}
+	else {
+		// if the switch comes back on we stop buzzing
+		beep_off(false);
+	}
+	return sw_state;
+}
+
 // Fault checking order does not really matter. From a UX perspective, switch should be before angle.
 static bool check_faults(bool ignoreTimers){
 	// Check switch
@@ -899,59 +960,15 @@ static THD_FUNCTION(balance_thread, arg) {
 		acceleration = biquad_process(&accel_biquad2, acceleration);
 		last_erpm = smooth_erpm;
 
-		adc1 = (((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG;
-#ifdef ADC_IND_EXT2
-		adc2 = (((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG;
-#else
-		adc2 = 0.0;
-#endif
+		accelavg += (acceleration_raw - accelhist[accelidx]) / ACCEL_ARRAY_SIZE;
+		accelhist[accelidx] = acceleration_raw;
+		accelidx++;
+		if (accelidx == ACCEL_ARRAY_SIZE)
+			accelidx = 0;
 
-		// Calculate switch state from ADC values
-		if(balance_conf.fault_adc1 == 0 && balance_conf.fault_adc2 == 0){ // No Switch
-			switch_state = ON;
-		}else if(balance_conf.fault_adc2 == 0){ // Single switch on ADC1
-			if(adc1 > balance_conf.fault_adc1){
-				switch_state = ON;
-			} else {
-				switch_state = OFF;
-			}
-		}else if(balance_conf.fault_adc1 == 0){ // Single switch on ADC2
-			if(adc2 > balance_conf.fault_adc2){
-				switch_state = ON;
-			} else {
-				switch_state = OFF;
-			}
-		}else{ // Double switch
-			if(adc1 > balance_conf.fault_adc1 && adc2 > balance_conf.fault_adc2){
-				switch_state = ON;
-			}else if(adc1 > balance_conf.fault_adc1 || adc2 > balance_conf.fault_adc2){
-				switch_state = HALF;
-			}else{
-				switch_state = OFF;
-			}
-		}
+		acceleration = accelavg;
 
-		/*
-		 * Use external buzzer to notify rider of foot switch faults.
-		 */
-		if (switch_state == OFF) {
-			if ((abs_erpm > balance_conf.fault_adc_half_erpm)
-				&& (state >= RUNNING)
-				&& (state <= RUNNING_TILTBACK_LOW_VOLTAGE))
-			{
-				// If we're at riding speed and the switch is off => ALERT the user
-				// set force=true since this could indicate an imminent shutdown/nosedive
-				beep_on(true);
-			}
-			else {
-				// if we drop below riding speed stop buzzing
-				beep_off(false);
-			}
-		}
-		else {
-			// if the switch comes back on we stop buzzing
-			beep_off(false);
-		}
+		switch_state = check_adcs();
 
 		// Control Loop State Logic
 		switch(state){
