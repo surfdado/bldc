@@ -108,7 +108,7 @@ static systime_t softstart_timer;
 static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
-static float acceleration, last_erpm, shedfactor;
+static float acceleration, acceleration1, acceleration2, last_erpm, shedfactor;
 static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, atr_intensity;
 static float torquetilt_target;
 static int erpm_sign;
@@ -966,8 +966,9 @@ static THD_FUNCTION(balance_thread, arg) {
 			yaw_aggregate += yaw_change;
 
 		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
-		acceleration = biquad_process(&accel_biquad1, smooth_erpm - last_erpm);
-		acceleration = biquad_process(&accel_biquad2, acceleration);
+		acceleration2 = smooth_erpm - last_erpm;
+		acceleration1 = biquad_process(&accel_biquad1, acceleration2);
+		acceleration = biquad_process(&accel_biquad2, acceleration1);
 		last_erpm = smooth_erpm;
 
 		accelavg += (acceleration_raw - accelhist[accelidx]) / ACCEL_ARRAY_SIZE;
