@@ -118,7 +118,7 @@ static bool use_soft_start;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
-static float grunt_factor, grunt_filtered, grunt_aggregate, grunt_threshold, tt_scaling;
+static float accel_gap;
 static float torquetilt_target;
 static int erpm_sign;
 
@@ -296,11 +296,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	yaw_aggregate_target = balance_conf.yaw_ki;			// borrow yaw_ki for aggregate yaw-change target
 	tuntilt_boost_per_erpm = (float)balance_conf.turntilt_erpm_boost / 100.0 / (float)balance_conf.turntilt_erpm_boost_end;
 
-	// minimum aggregate grunt to start torque tilt
-	grunt_threshold = balance_conf.yaw_kd;
-	if (grunt_threshold < 10)
-		grunt_threshold = 100;
-
 	// Braking PID softness
 	int brake_pid_scaling = balance_conf.kd_pt1_highpass_frequency;
 	int brake_kp_scaling = brake_pid_scaling / 100;
@@ -325,11 +320,15 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
 	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1000);
 
-	tt_pid_intensity = balance_conf.torquetilt_start_current;
-	tt_pid_intensity = fminf(tt_pid_intensity, 4);
+	tt_pid_intensity = 0.5;//balance_conf.torquetilt_start_current;
+	//tt_pid_intensity = fminf(tt_pid_intensity, 4);
 
-	tt_strength_uphill = balance_conf.torquetilt_strength;
-	tt_strength_downhill = balance_conf.torquetilt_strength * (1 + balance_conf.yaw_kp / 100);
+	tt_strength_uphill = balance_conf.torquetilt_strength * 10;
+	if (tt_strength_uphill > 2.5)
+		tt_strength_uphill = 1.5;
+	if (tt_strength_uphill < 0)
+		tt_strength_uphill = 0;
+	tt_strength_downhill = tt_strength_uphill * (1 + balance_conf.yaw_kp / 100);
 
 	// Any value above 0 will increase the board angle to match the slope
 	integral_tt_impact_downhill = 1.0 - (float)balance_conf.kd_biquad_lowpass / 100.0;
@@ -547,8 +546,7 @@ static void reset_vars(void){
 
 	// ATR:
 	biquad_reset(&accel_biquad);
-	grunt_aggregate = 0;
-	grunt_filtered = 0;
+	accel_gap = 0;
 	pid_value = 0;
 
 	for (int i=0; i<40; i++)
@@ -903,57 +901,49 @@ static void apply_torquetilt(void){
 		return;
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
-	float torquetilt_strength = tt_strength_uphill;
-	const float accel_factor = 10;
-	bool braking = false;
+	float abs_torque = fabsf(torquetilt_filtered_current);
+	int torque_sign = SIGN(torquetilt_filtered_current);
+	float torque_offset = balance_conf.torquetilt_start_current;
 
-	if (SIGN(torquetilt_filtered_current) != SIGN(erpm)) {
+	float torquetilt_strength = tt_strength_uphill;
+	const float accel_factor = balance_conf.yaw_kd;
+	int braking_sign = 1;	// 1 = accel, -1 = braking
+
+	if ((abs_erpm > 250) && (torque_sign != SIGN(erpm))) {
 		// current is negative, so we are braking or going downhill
 		// high currents downhill are less likely
 		torquetilt_strength = tt_strength_downhill;
-		braking = true;
+		braking_sign = -1;
 	}
 
 	// compare measured acceleration to expected acceleration
-	float measured_acc = acceleration;
-	// expected acceleration is proportional to current (minus an offset, required to maintain speed)
-	float expected_acc = (torquetilt_filtered_current - 7) / accel_factor;
-	int expected_sign = SIGN(expected_acc);
+	float measured_acc = fmaxf(acceleration, -5);
+	measured_acc = fminf(acceleration, 5);
 
-	// acceleration opposite to current? produce high grunt by treating it as near zero acceleration
-	// grunt factor is always positive!
-	if (SIGN(measured_acc) != expected_sign)
-		measured_acc = expected_sign * 0.05;
+	// expected acceleration is proportional to current (minus an offset, required to balance/maintain speed)
+	float expected_acc = (abs_torque - braking_sign * torque_offset) / accel_factor * torque_sign;
 
-	// grunt is a measure of how much we're struggling to produce acceleration
-	const float MAXGRUNT = 12.0;
-	grunt_factor = fminf(expected_acc / measured_acc, MAXGRUNT);
-	if (grunt_factor < 0)
-		grunt_factor = MAXGRUNT;
-	grunt_filtered = grunt_filtered * 0.9 + grunt_factor * 0.1;
-	if (grunt_filtered > 1)
-		grunt_aggregate += grunt_filtered;
-	else
-		grunt_aggregate /= 3;
-
-	if (grunt_aggregate > grunt_threshold) {
-		grunt_aggregate = fminf(grunt_aggregate, 20000); // limit to equivalent of 1 second of max grunt
-		/*float*/ tt_scaling = 1;	// this can be a local variable ultimately
-		grunt_filtered = fabsf(grunt_filtered);
-		// acceleration deficit < 1 means we are getting some acceleration but just not quite as much as expected
-		tt_scaling = (grunt_filtered) / MAXGRUNT;
-
-		// Take abs motor current, multiply it by "power" to get our desired angle,
-		torquetilt_target = fabsf(torquetilt_filtered_current) * torquetilt_strength * tt_scaling;
-		// min with the limit to respect boundaries.
-		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
-		// Finally multiply it by sign motor current to get directionality back
-		torquetilt_target *= SIGN(torquetilt_filtered_current);
-	}
+	float acc_diff = expected_acc - measured_acc;
+	if (abs_erpm > 2000)
+		accel_gap = 0.9 * accel_gap + 0.1 * acc_diff;
+	else if (abs_erpm > 1000)
+		accel_gap = 0.95 * accel_gap + 0.05 * acc_diff;
+	else if (abs_erpm > 250)
+		accel_gap = 0.98 * accel_gap + 0.02 * acc_diff;
 	else {
-		// If the aggregate grunt is below the ratio then we must be just accelerating. No TT here!!
-		torquetilt_target = 0;
+		// low speed erpms are VERY choppy/noisy - ignore them if we're not trying to actually accelerate
+		if (fabsf(expected_acc) < 1)
+			accel_gap = 0;
+		else if (fabsf(expected_acc) < 1.5)
+			accel_gap = 0.99 * accel_gap + 0.01 * acc_diff;
+		else
+			accel_gap = 0.95 * accel_gap + 0.05 * acc_diff;
 	}
+
+	// now torquetilt target is purely based on gap between expected and actual acceleration
+	torquetilt_target = torquetilt_strength * accel_gap;
+	torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
+	torquetilt_target = fmaxf(torquetilt_target, -balance_conf.torquetilt_angle_limit);
 
 	// Deal with integral windup
 	int sign_erpm = SIGN(erpm);
@@ -1007,8 +997,8 @@ static void apply_torquetilt(void){
 	   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
 		step_size = torquetilt_off_step_size;
 	}else{
-		// reduce response speed at lower erpms or when going downhill/braking
-		if ((abs_erpm < 800) || (braking))
+		// reduce response speed when going downhill/braking
+		if (/*(abs_erpm < 800) || */(braking_sign == -1))
 			step_size = torquetilt_on_step_size / 2;
 		else
 			step_size = torquetilt_on_step_size;
