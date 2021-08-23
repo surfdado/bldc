@@ -1364,10 +1364,10 @@ static THD_FUNCTION(balance_thread, arg) {
 						logdelaycounter++;
 						b0 += pitch_angle;
 						b1 += derivative * kd;
-						b2 += acceleration;
-						b3 += ki;
-						b4 += kp;
-						b5 += kd;
+						b2 += kp;//acceleration;
+						b3 += accel_gap;
+						b4 += ki;
+						b5 += torquetilt_filtered_current;
 						b6 += last_erpm;
 						b7 += setpoint;
 						b8 += pid_value;
