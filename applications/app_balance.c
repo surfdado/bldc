@@ -1345,7 +1345,7 @@ static THD_FUNCTION(balance_thread, arg) {
 								buf3[0] = 5555;
 								buf4[0] = 5555;
 								buf5[0] = mcpwm_foc_get_freq();
-								buf6[0] = 5555;
+								buf6[0] = logperiod;
 								buf7[0] = 5555;
 								buf8[0] = 5555;
 								buf9[0] = 5555;
