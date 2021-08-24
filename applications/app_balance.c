@@ -102,6 +102,7 @@ static float tiltback_variable, tiltback_variable_max_erpm;
 static float tt_pid_intensity;
 static bool allow_high_speed_full_switch_faults;
 static float mc_current_max, mc_current_min;
+static float mc_max_temp_fet;
 
 // Feature: Reverse Stop
 static float reverse_stop_step_size, reverse_tolerance, reverse_total_erpm;
@@ -332,6 +333,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	mc_current_max = mc_interface_get_configuration()->l_current_max;
 	mc_current_min = mc_interface_get_configuration()->l_current_min;
+	mc_max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start - 2;
 
 	switch (app_get_configuration()->shutdown_mode) {
 	case SHUTDOWN_MODE_OFF_AFTER_10S: inactivity_timeout = 10; break;
@@ -715,6 +717,23 @@ static void calculate_setpoint_target(void){
 		setpointAdjustmentType = TILTBACK_LV;
 		state = RUNNING_TILTBACK_LOW_VOLTAGE;
 		beep_alert(3, 0);	// Triple-beep
+	}else if(mc_interface_temp_fet_filtered() > mc_max_temp_fet){
+		// Use the angle from Low-Voltage tiltback, but slower speed from High-Voltage tiltback
+		beep_alert(3, 1);	// Triple-beep (long beeps)
+		if(mc_interface_temp_fet_filtered() > (mc_max_temp_fet + 1)) {
+			if(erpm > 0){
+				setpoint_target = balance_conf.tiltback_lv_angle;
+			} else {
+				setpoint_target = -balance_conf.tiltback_lv_angle;
+			}
+			setpointAdjustmentType = TILTBACK_HV;
+			state = RUNNING_TILTBACK_LOW_VOLTAGE;
+		}
+		else {
+			// The rider has 1 degree Celsius left before we start tilting back
+			setpointAdjustmentType = TILTBACK_NONE;
+			state = RUNNING;
+		}
 	}else{
 		// Normal running
 		if (use_reverse_stop && (erpm < 0)) {
