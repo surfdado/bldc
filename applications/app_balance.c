@@ -311,8 +311,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
 	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1000);
 
-	tt_pid_intensity = 0.5;//balance_conf.torquetilt_start_current;
-	//tt_pid_intensity = fminf(tt_pid_intensity, 4);
+	// How much does Torque-Tilt stiffen PIDs - intensity = 1 doubles PIDs at 6 degree TT
+	tt_pid_intensity = balance_conf.booster_current;
+	tt_pid_intensity = fminf(tt_pid_intensity, 1.5);
+	tt_pid_intensity = fmaxf(tt_pid_intensity, 0);
 
 	tt_strength_uphill = balance_conf.torquetilt_strength * 10;
 	if (tt_strength_uphill > 2.5)
@@ -1238,14 +1240,14 @@ static THD_FUNCTION(balance_thread, arg) {
 				float kp_target, ki_target, kd_target;
 				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
 					// acceleration and torquetilt situations
-					float ki_multiplier = 1;
+					float pi_multiplier = 1;
 					if (fabsf(torquetilt_interpolated) > 2) {
 						// torque stiffness
-						ki_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
-						ki_multiplier = fminf(1 + ki_multiplier, 2);
+						pi_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
+						pi_multiplier = fminf(1 + pi_multiplier, 2);
 					}
-					kp_target = kp_acc;
-					ki_target = ki_acc * ki_multiplier;
+					kp_target = kp_acc * pi_multiplier;
+					ki_target = ki_acc * pi_multiplier;
 					kd_target = kd_acc;
 				}
 				else {
