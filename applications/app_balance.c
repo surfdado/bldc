@@ -325,11 +325,13 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	tt_pid_intensity = fminf(tt_pid_intensity, 1.5);
 	tt_pid_intensity = fmaxf(tt_pid_intensity, 0);
 
+	// Torque-Tilt strength is different for up vs downhills
 	tt_strength_uphill = balance_conf.torquetilt_strength * 10;
 	if (tt_strength_uphill > 2.5)
 		tt_strength_uphill = 1.5;
 	if (tt_strength_uphill < 0)
 		tt_strength_uphill = 0;
+	// Downhill strength must be higher since downhill amps tend to be lower than uphill amps
 	tt_strength_downhill = tt_strength_uphill * (1 + balance_conf.yaw_kp / 100);
 
 	// Any value above 0 will increase the board angle to match the slope
@@ -373,10 +375,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		boost_kp_adder = 1;
 	if (boost_angle > 3)
 		boost_angle = 1;
-	if (balance_conf.booster_current > 0)
-		boost_kp_adder = 0;
-	else
-		boost_kp_adder = fminf(boost_kp_adder, 5);
+	boost_kp_adder = fminf(boost_kp_adder, 5);
 
 	// Roll-Steer KP controls max brake amps (for P+D) AND max derivative amps
 	max_brake_amps = balance_conf.roll_steer_kp;
