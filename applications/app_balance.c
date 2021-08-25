@@ -1374,7 +1374,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						// signal that logging is done
 						logidx++;
 						logtimer = current_time;
-						//beep_alert(1, 1);
+						beep_alert(1, 1);
 					}
 					else {
 						// re-arm logging after 5 seconds
@@ -1454,6 +1454,16 @@ static THD_FUNCTION(balance_thread, arg) {
 				break;
 		}
 		update_beep_alert();
+
+		// Microlog:
+		if (buf0[0] == 1111) {
+			if (logidx == LOGBUFSIZE) {
+				// signal that log writing is done
+				beep_alert(1, 1);
+				// allow next log to be created
+				logidx = 0;
+			}
+		}
 
 		// Debug outputs
 		app_balance_sample_debug();
