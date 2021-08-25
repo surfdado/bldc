@@ -1358,18 +1358,6 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				last_proportional = proportional;
 
-				// Apply Booster (but only for normal riding without LV/HV/Duty tiltback)
-				if ((state == RUNNING) && (balance_conf.booster_current > 0)) {
-					float abs_proportional = fabsf(proportional);
-					if(abs_proportional > balance_conf.booster_angle){
-						if(abs_proportional - balance_conf.booster_angle < balance_conf.booster_ramp){
-							pid_value += (balance_conf.booster_current * SIGN(proportional)) * ((abs_proportional - balance_conf.booster_angle) / balance_conf.booster_ramp);
-						}else{
-							pid_value += balance_conf.booster_current * SIGN(proportional);
-						}
-					}
-				}
-
 				// For logging only:
 				balance_integral = integral;
 				balance_ki = ki;
