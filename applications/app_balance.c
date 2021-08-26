@@ -112,9 +112,10 @@ static systime_t reverse_timer;
 static bool use_reverse_stop;
 
 // Feature: Soft Start
-#define SOFTSTART_GRACE_PERIOD_MS 100
+#define START_GRACE_PERIOD_MS 100
 static systime_t softstart_timer;
 static bool use_soft_start;
+static int start_counter_ms;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
@@ -568,10 +569,12 @@ static void reset_vars(void){
 	}
 	else {
 		// Normal start / quick-start
-		kp = kp_acc / 2;
-		ki = ki_acc / 2;
-		kd = kd_acc / 2;
+		kp = kp_acc * 0.8;
+		ki = ki_acc;
+		kd = kd_acc * 0.5;
 	}
+	// first 100ms we don't want to use braking PIDs (hard coded to assume loop-Hz=1000)
+	start_counter_ms = START_GRACE_PERIOD_MS;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -767,7 +770,7 @@ static void calculate_setpoint_target(void){
 			state = RUNNING;
 			softstart_timer = current_time;
 		}
-		else if (ST2MS(current_time - softstart_timer) > SOFTSTART_GRACE_PERIOD_MS){
+		else if (ST2MS(current_time - softstart_timer) > START_GRACE_PERIOD_MS){
 			// After a short delay transition to normal riding
 			setpointAdjustmentType = TILTBACK_NONE;
 		}
@@ -1226,6 +1229,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					break;
 				}
 
+				if(start_counter_ms){
+					start_counter_ms--;
+				}
+
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
@@ -1264,7 +1271,10 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-				if ((SIGN(proportional) == SIGN(erpm)) || (fabsf(torquetilt_interpolated) > 1)) {
+				if ((SIGN(proportional) == SIGN(erpm)) ||
+					(fabsf(torquetilt_interpolated) > 1) ||
+					(start_counter_ms))
+				{
 					// acceleration and torquetilt situations
 					float pi_multiplier = 1;
 					if (fabsf(torquetilt_interpolated) > 2) {
@@ -1289,7 +1299,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Ensure smooth transition between different PID targets
-				if (ki_target > ki) {
+				if (kp_target > kp) {
 					// stiffen quickly
 					kp = kp * 0.99 + kp_target * 0.01;
 					ki = ki * 0.99 + ki_target * 0.01;
@@ -1315,7 +1325,13 @@ static THD_FUNCTION(balance_thread, arg) {
 					// use higher kp for first few degrees of proportional to keep the board more stable
 					float pid_prop = kp * proportional;
 					float boost = fminf(fabsf(proportional), boost_angle);
-					pid_prop += boost * boost_kp_adder * SIGN(proportional);
+					if(start_counter_ms) {
+						pid_prop += boost * boost_kp_adder * SIGN(proportional) *
+							(START_GRACE_PERIOD_MS - start_counter_ms) / START_GRACE_PERIOD_MS;
+					}
+					else {
+						pid_prop += boost * boost_kp_adder * SIGN(proportional);
+					}
 
 					// D:
 					float pid_derivative = kd * derivative;
