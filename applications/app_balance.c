@@ -1475,14 +1475,14 @@ static THD_FUNCTION(balance_thread, arg) {
 						logdelaycounter++;
 						b0 += pitch_angle;
 						b1 += derivative * kd;
-						b2 += kp;//acceleration;
+						b2 += acceleration;
 						b3 += accel_gap;
-						b4 += ki;
+						b4 += kp;
 						b5 += torquetilt_filtered_current;
 						b6 += last_erpm;
 						b7 += setpoint;
 						b8 += pid_value;
-						b9 += integral;
+						b9 += integral * ki;
 
 						if (logdelaycounter >= logperiod) {
 							logdelaycounter = 0;
@@ -1493,7 +1493,7 @@ static THD_FUNCTION(balance_thread, arg) {
 								buf2[0] = 5555;
 								buf3[0] = 5555;
 								buf4[0] = 5555;
-								buf5[0] = mcpwm_foc_get_freq();
+								buf5[0] = 5555;
 								buf6[0] = logperiod;
 								buf7[0] = 5555;
 								buf8[0] = 5555;
