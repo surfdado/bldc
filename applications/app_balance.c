@@ -966,8 +966,10 @@ static void apply_torquetilt(void){
 	}
 
 	float step_size;
-	if(((torquetilt_target >= 0) && (torquetilt_interpolated - torquetilt_target > 0)) ||
-	   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
+	//if(((torquetilt_target >= 0) && (torquetilt_interpolated - torquetilt_target > 0)) ||
+	//   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
+	if(((torquetilt_target > -2) && (torquetilt_interpolated > torquetilt_target) && (torquetilt_interpolated > 0)) ||
+	   ((torquetilt_target < 2) && (torquetilt_interpolated < torquetilt_target) && (torquetilt_interpolated < 0))) {
 		step_size = torquetilt_off_step_size;
 	}else{
 		// reduce response speed when going downhill/braking
