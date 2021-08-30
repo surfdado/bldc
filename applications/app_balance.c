@@ -115,6 +115,7 @@ static bool use_reverse_stop;
 static systime_t softstart_timer;
 static bool use_soft_start;
 static int start_counter_ms;
+static unsigned int start_counter_clicks, start_counter_clicks_max, click_current;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
@@ -261,17 +262,32 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	noseangling_step_size = balance_conf.noseangling_speed / balance_conf.hertz;
 
+	// Feature: Stealthy start vs normal start (noticeable click when engaging)
+	start_counter_clicks_max = 2;
+	int bc = balance_conf.brake_current;
+	click_current = (balance_conf.brake_current - bc) * 100;
+	click_current = fminf(click_current, 30);
+
 	// Feature: Reverse Stop (ON if startup_speed ends in .1)
+	// startup_speed = x.0: noticeable click on start, no reverse stop
+	// startup_speed = x.1: noticeable click on start, reverse stop
+	// startup_speed = x.2: stealthy start, no reverse stop
+	// startup_speed = x.3: stealthy start + reverse stop
+	use_reverse_stop = false;
+	reverse_tolerance = 50000;
 	reverse_stop_step_size = 100.0 / balance_conf.hertz;
 	float startup_speed = balance_conf.startup_speed;
 	int ss = (int) startup_speed;
 	float ss_rest = startup_speed - ss;
 	if ((ss_rest > 0.09) && (ss_rest < 0.11)) {
 		use_reverse_stop = true;
-		reverse_tolerance = 50000;
 	}
-	else {
-		use_reverse_stop = false;
+	else if ((ss_rest > 0.19) && (ss_rest < 0.21)) {
+		start_counter_clicks_max = 0;
+	}
+	else if ((ss_rest > 0.29) && (ss_rest < 0.31)) {
+		start_counter_clicks_max = 0;
+		use_reverse_stop = true;
 	}
 
 	// Feature: Soft Start
@@ -549,6 +565,7 @@ static void reset_vars(void){
 	}
 	// first 100ms we don't want to use braking PIDs (hard coded to assume loop-Hz=1000)
 	start_counter_ms = START_GRACE_PERIOD_MS;
+	start_counter_clicks = start_counter_clicks_max;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -1361,7 +1378,16 @@ static THD_FUNCTION(balance_thread, arg) {
 					beep_off(0);
 				}
 
-				set_current(pid_value);
+				if (start_counter_clicks) {
+					start_counter_clicks--;
+					if ((start_counter_clicks == 0) || (start_counter_clicks == 2))
+						set_current(pid_value - click_current);
+					else
+						set_current(pid_value + click_current);
+				}
+				else {
+					set_current(pid_value);
+				}
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
