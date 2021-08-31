@@ -440,7 +440,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	logperiod = (int) balance_conf.yaw_current_clamp;
 
 	// Micro-Logging
-	if (balance_conf.deadzone == 0) {
+	if (balance_conf.deadzone < 2) {
 		logidx = 0;
 		buf0[0] = 0;
 		buf1[0] = 0;
