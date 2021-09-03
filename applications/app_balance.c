@@ -115,7 +115,7 @@ static bool use_reverse_stop;
 static systime_t softstart_timer;
 static bool use_soft_start;
 static int start_counter_ms;
-static unsigned int start_counter_clicks, start_counter_clicks_max;
+static unsigned int start_counter_clicks, start_counter_clicks_max, click_current;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
@@ -264,6 +264,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Feature: Stealthy start vs normal start (noticeable click when engaging)
 	start_counter_clicks_max = 2;
+	int bc = balance_conf.brake_current;
+	click_current = (balance_conf.brake_current - bc) * 100;
+	click_current = fminf(click_current, 30);
 
 	// Feature: Reverse Stop (ON if startup_speed ends in .1)
 	// startup_speed = x.0: noticeable click on start, no reverse stop
@@ -1382,9 +1385,9 @@ static THD_FUNCTION(balance_thread, arg) {
 				if (start_counter_clicks) {
 					start_counter_clicks--;
 					if ((start_counter_clicks == 0) || (start_counter_clicks == 2))
-						set_current(pid_value - 20);
+						set_current(pid_value - click_current);
 					else
-						set_current(pid_value + 20);
+						set_current(pid_value + click_current);
 				}
 				else {
 					set_current(pid_value);
