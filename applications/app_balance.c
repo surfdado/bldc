@@ -122,6 +122,7 @@ static unsigned int start_counter_clicks, start_counter_clicks_max, click_curren
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
 static float accel_gap;
 static float torquetilt_target;
+static int tttarget_lag;
 static int erpm_sign;
 
 // Feature: Turntilt
@@ -571,6 +572,7 @@ static void reset_vars(void){
 	biquad_reset(&accel_biquad);
 	accel_gap = 0;
 	pid_value = 0;
+	tttarget_lag = 0;
 
 	for (int i=0; i<40; i++)
 		accelhist[i] = 0;
@@ -949,6 +951,7 @@ static void apply_torquetilt(void){
 	// expected acceleration is proportional to current (minus an offset, required to balance/maintain speed)
 	float expected_acc = (abs_torque - braking_sign * torque_offset) / accel_factor * torque_sign;
 
+	bool static_climb = false;
 	float acc_diff = expected_acc - measured_acc;
 	if (abs_erpm > 2000)
 		accel_gap = 0.9 * accel_gap + 0.1 * acc_diff;
@@ -960,10 +963,24 @@ static void apply_torquetilt(void){
 		// low speed erpms are VERY choppy/noisy - ignore them if we're not trying to actually accelerate
 		if (fabsf(expected_acc) < 1)
 			accel_gap = 0;
-		else if (fabsf(expected_acc) < 1.5)
-			accel_gap = 0.99 * accel_gap + 0.01 * acc_diff;
-		else
-			accel_gap = 0.95 * accel_gap + 0.05 * acc_diff;
+		else if (fabsf(expected_acc) < 1.5) {
+			if (fabsf(accel_gap > 1)) {
+				// Once the gap is above 1 we get more aggressive
+				accel_gap = 0.9 * accel_gap + 0.1 * acc_diff;
+				static_climb = true;
+			}
+			else
+				// Until the gap is below 1 we use a strong filter because of noise
+				accel_gap = 0.99 * accel_gap + 0.01 * acc_diff;
+		}
+		else {
+			if (fabsf(accel_gap > 1)) {
+				accel_gap = 0.9 * accel_gap + 0.1 * acc_diff;
+				static_climb = true;
+			}
+			else
+				accel_gap = 0.95 * accel_gap + 0.05 * acc_diff;
+		}
 	}
 
 	// now torquetilt target is purely based on gap between expected and actual acceleration
@@ -1019,17 +1036,29 @@ static void apply_torquetilt(void){
 	}
 
 	float step_size;
-	//if(((torquetilt_target >= 0) && (torquetilt_interpolated - torquetilt_target > 0)) ||
-	//   ((torquetilt_target <= 0) && (torquetilt_interpolated - torquetilt_target < 0))){
 	if(((torquetilt_target > -2) && (torquetilt_interpolated > torquetilt_target) && (torquetilt_interpolated > 0)) ||
 	   ((torquetilt_target < 2) && (torquetilt_interpolated < torquetilt_target) && (torquetilt_interpolated < 0))) {
-		step_size = torquetilt_off_step_size;
-	}else{
-		// reduce response speed when going downhill/braking
-		if (/*(abs_erpm < 800) || */(braking_sign == -1))
-			step_size = torquetilt_on_step_size / 2;
+		float tttarget_diff = fabsf(torquetilt_interpolated - torquetilt_target);
+		if (tttarget_diff > 0.3)
+			tttarget_lag++;
 		else
+			tttarget_lag = 0;
+
+		if ((tttarget_lag > 100) && (abs_erpm < 800))
+			step_size = torquetilt_on_step_size / 2;	// we've been going back to center for 100ms now, speed it up!
+		else
+			step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+	}else{
+		tttarget_lag = 0;
+
+		// reduce response speed when going downhill/braking
+		if (braking_sign == -1)
+			step_size = torquetilt_on_step_size / 2;
+		else {
 			step_size = torquetilt_on_step_size;
+			if (static_climb)
+				step_size = step_size * 1.5;
+		}
 	}
 
 	if(fabsf(torquetilt_target - torquetilt_interpolated) < step_size){
