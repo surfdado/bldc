@@ -1307,6 +1307,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					kd = kd * 0.999 + kd_target * 0.001;
 				}
 
+				float pid_prop = 0, pid_derivative = 0, pid_integral = 0;
+
 				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
 					float pid_target = (kp * proportional) + (kd * derivative);
@@ -1318,7 +1320,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				else {
 					// P:
 					// use higher kp for first few degrees of proportional to keep the board more stable
-					float pid_prop = kp * proportional;
+					pid_prop = kp * proportional;
 					float boost = fminf(fabsf(proportional), boost_angle);
 					if(start_counter_ms) {
 						pid_prop += boost * boost_kp_adder * SIGN(proportional) *
@@ -1329,7 +1331,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 
 					// D:
-					float pid_derivative = kd * derivative;
+					pid_derivative = kd * derivative;
 					if (fabsf(pid_derivative) > max_derivative) {
 						pid_derivative = max_derivative * SIGN(pid_derivative);
 					}
@@ -1354,7 +1356,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 
 					// I:
-					float pid_integral = ki * integral;
+					pid_integral = ki * integral;
 
 					// smoothen out requested current (introduce ~10ms effective latency):
 					pid_value = 0.1 * (new_pd_value + pid_integral) + 0.9 * pid_value;
