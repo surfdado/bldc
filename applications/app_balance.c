@@ -1474,7 +1474,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+100)) || (logidx > 0)) {
 						logdelaycounter++;
 						b0 += pitch_angle;
-						b1 += derivative * kd;
+						b1 += pid_derivative;
 						b2 += acceleration;
 						b3 += accel_gap;
 						b4 += kp;
@@ -1482,7 +1482,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						b6 += last_erpm;
 						b7 += setpoint;
 						b8 += pid_value;
-						b9 += integral * ki;
+						b9 += pid_integral;
 
 						if (logdelaycounter >= logperiod) {
 							logdelaycounter = 0;
