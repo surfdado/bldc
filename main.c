@@ -211,10 +211,11 @@ int main(void) {
 	palClearPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
 
-	chThdSleepMilliseconds(100);
+	chThdSleepMilliseconds(50);
 
 	events_init();
 	hw_init_gpio();
+
 	LED_RED_OFF();
 	LED_GREEN_OFF();
 
@@ -244,6 +245,14 @@ int main(void) {
 	comm_can_init();
 #endif
 
+
+#ifdef HAS_EXT_BUZZER
+	// Let the rider know that the board is ready
+	beep_on(1);
+	chThdSleepMilliseconds(20);
+	beep_off(1);
+#endif
+
 	app_uartcomm_initialize();
 	app_configuration *appconf = mempools_alloc_appconf();
 	conf_general_read_app_configuration(appconf);
@@ -268,11 +277,6 @@ int main(void) {
 	}
 #endif
 
-	// Let the rider know that the system has booted
-	beep_on(1);
-	chThdSleepMilliseconds(100);
-	beep_off(1);
-
 	// Threads
 	chThdCreateStatic(periodic_thread_wa, sizeof(periodic_thread_wa), NORMALPRIO, periodic_thread, NULL);
 	chThdCreateStatic(flash_integrity_check_thread_wa, sizeof(flash_integrity_check_thread_wa), LOWPRIO, flash_integrity_check_thread, NULL);
@@ -282,6 +286,13 @@ int main(void) {
 
 	mempools_free_appconf(appconf);
 
+#ifdef HAS_EXT_BUZZER
+	// Let the rider know that the board is ready
+	beep_on(1);
+	chThdSleepMilliseconds(50);
+	beep_off(1);
+#endif
+	
 #if HAS_BLACKMAGIC
 	bm_init();
 #endif
@@ -296,11 +307,6 @@ int main(void) {
 	chThdSleepMilliseconds(500);
 	palSetPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
-
-	// Let the rider know that the board is ready
-	beep_on(1);
-	chThdSleepMilliseconds(100);
-	beep_off(1);
 
 	m_init_done = true;
 
