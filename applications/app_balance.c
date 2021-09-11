@@ -130,8 +130,12 @@ static float last_yaw_angle, yaw_angle, abs_yaw_change, yaw_change, yaw_aggregat
 static float tuntilt_boost_per_erpm, yaw_aggregate_target;
 
 // Feature: PID toning
-float boost_angle, boost_kp_adder;
-float max_brake_amps, max_derivative;
+static float center_boost_angle, center_boost_kp_adder;
+static float max_brake_amps, max_derivative;
+static float accel_boost_threshold, accel_boost_threshold2, accel_boost_intensity;
+#define BOOST_THRESHOLD 8
+#define BOOST_THRESHOLD2 14
+#define BOOST_INTENSITY 0.5;
 
 // Inactivity Timeout
 static float inactivity_timer, inactivity_timeout;
@@ -393,13 +397,32 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
 	// Feature: PID Toning
-	boost_angle = balance_conf.booster_angle;
-	boost_kp_adder = balance_conf.booster_ramp - kp_acc;
-	if (boost_kp_adder < 0)
-		boost_kp_adder = 1;
-	if (boost_angle > 3)
-		boost_angle = 1;
-	boost_kp_adder = fminf(boost_kp_adder, 5);
+	center_boost_angle = balance_conf.booster_angle;
+	center_boost_kp_adder = (balance_conf.booster_ramp / 3.5 * kp_acc)  - kp_acc; // scaled to match configured P
+	if (center_boost_kp_adder < 0)
+		center_boost_kp_adder = 1;
+	if (center_boost_angle > 3)
+		center_boost_angle = 1;
+	center_boost_kp_adder = fminf(center_boost_kp_adder, 7);
+
+	// Feature: Boost
+	accel_boost_threshold = BOOST_THRESHOLD;
+	accel_boost_threshold2 = BOOST_THRESHOLD2;
+	accel_boost_intensity = BOOST_INTENSITY;
+	if ((app_get_configuration()->app_nrf_conf.retry_delay == NRF_RETR_DELAY_3750US) &&
+		(app_get_configuration()->app_nrf_conf.retries == 13)) {
+		// NRF config is used to customize boost parameters
+		accel_boost_threshold = (float)app_get_configuration()->app_nrf_conf.address[0];
+		accel_boost_threshold2 = (float)app_get_configuration()->app_nrf_conf.address[1];
+		accel_boost_intensity = ((float)app_get_configuration()->app_nrf_conf.address[2]) / 10.0;
+		// Turn off booster if bogus values attempted
+		if ((accel_boost_threshold < 4) || (accel_boost_threshold > 20))
+			accel_boost_intensity = 0;
+		else if ((accel_boost_threshold2 < accel_boost_threshold) || (accel_boost_threshold2 > 20))
+			accel_boost_intensity = 0;
+		else if ((accel_boost_intensity < 0) || (accel_boost_intensity > 1))
+			accel_boost_intensity = 0;
+	}
 
 	// Roll-Steer KP controls max brake amps (for P+D) AND max derivative amps
 	max_brake_amps = balance_conf.roll_steer_kp;
@@ -1320,9 +1343,12 @@ static THD_FUNCTION(balance_thread, arg) {
 				d_pt1_lowpass_state = d_pt1_lowpass_state + d_pt1_lowpass_k * (derivative - d_pt1_lowpass_state);
 				derivative = d_pt1_lowpass_state;
 
+				// Identify braking based on angle of the board vs direction of movement
+				bool braking = (SIGN(proportional) != SIGN(erpm));
+
 				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-				if ((SIGN(proportional) == SIGN(erpm)) ||
+				if (!braking ||
 					(fabsf(torquetilt_interpolated) > 1) ||
 					(start_counter_ms))
 				{
@@ -1377,13 +1403,28 @@ static THD_FUNCTION(balance_thread, arg) {
 					// P:
 					// use higher kp for first few degrees of proportional to keep the board more stable
 					pid_prop = kp * proportional;
-					float boost = fminf(fabsf(proportional), boost_angle);
+					float abs_prop = fabsf(proportional);
+					float center_boost = fminf(abs_prop, center_boost_angle);
+					float accel_boost = 0;
 					if(start_counter_ms) {
-						pid_prop += boost * boost_kp_adder * SIGN(proportional) *
+						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional) *
 							(START_GRACE_PERIOD_MS - start_counter_ms) / START_GRACE_PERIOD_MS;
 					}
 					else {
-						pid_prop += boost * boost_kp_adder * SIGN(proportional);
+						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional);
+
+						// Acceleration boost
+						if ((abs_prop > accel_boost_threshold) && !braking) {
+							float boost_prop = abs_prop - accel_boost_threshold;
+							accel_boost = boost_prop * kp * accel_boost_intensity;
+
+							if (abs_prop > accel_boost_threshold2) {
+								boost_prop = abs_prop - accel_boost_threshold2;
+								accel_boost += boost_prop * kp * accel_boost_intensity;
+							}
+						}
+
+						pid_prop += accel_boost * SIGN(proportional);
 					}
 
 					// D:
