@@ -62,7 +62,7 @@ void drv8323s_init(void) {
 	palSetPad(DRV8323S_CS_GPIO2, DRV8323S_CS_PIN2);
 #endif
 
-	chThdSleepMilliseconds(100);
+	chThdSleepMilliseconds(10);
 
 	// Disable OC           0000TTDDMMOOVVVV
 	drv8323s_write_reg(5, 0b0000000111010000);
