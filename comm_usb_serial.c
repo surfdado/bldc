@@ -325,7 +325,7 @@ void comm_usb_serial_init(void) {
 	 * after a reset.
 	 */
 	usbDisconnectBus(serusbcfg.usbp);
-	chThdSleepMilliseconds(1500);
+	chThdSleepMilliseconds(100);
 	usbStart(serusbcfg.usbp, &usbcfg);
 	usbConnectBus(serusbcfg.usbp);
 }
