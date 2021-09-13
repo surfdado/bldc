@@ -2183,7 +2183,7 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 		}
 	};
 
-	chThdSleepMilliseconds(1000);
+	chThdSleepMilliseconds(10);
 
 	// Disable timeout
 	systime_t tout = timeout_get_timeout_msec();
