@@ -141,6 +141,16 @@
 //#define HW_SOURCE "hw_uxv_sr.c"
 //#define HW_HEADER "hw_uxv_sr.h"
 
+//#define UBOX_75D100_R1
+//#define UBOX_75D100_R2
+//#define UBOX_75D300_R1
+//#define UBOX_75D300_R2
+//#define UBOX_SINGLE_75S100
+//#define HW75_300_REV_3
+//#define HW75_300_REV_2
+//#define HW_SOURCE "hw_spintend.c"
+//#define HW_HEADER "hw_spintend.h"
+
 //#define HW_DUAL_CONFIG_PARALLEL
 //#define HW_VER_IS_100D_V2
 //#define HW_SOURCE "hw_stormcore_100d.c"
