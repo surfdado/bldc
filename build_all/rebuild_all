@@ -566,3 +566,16 @@ touch conf_general.h
 make -j8 build_args='-DHW_SOURCE=\"hw_raiden7.c\" -DHW_HEADER=\"hw_raiden7.h\"' USE_VERBOSE_COMPILE=no
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
+
+#################### Spintend UBox ########################
+
+COPYDIR=Spintend_UBox_Single
+mkdir -p $COPYDIR
+rm -f $COPYDIR/*
+
+# default
+cd $FWPATH
+touch conf_general.h
+make -j8 build_args='-DHW_SOURCE=\"hw_spintend.c\" -DHW_HEADER=\"hw_spintend.h\" -DUBOX_SINGLE_75S100' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
