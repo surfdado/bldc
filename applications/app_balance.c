@@ -237,7 +237,7 @@ static void play_tune(bool doChangeFreqs) {
 		if (doChangeFreqs)
 			mcpwm_foc_change_sw(freqs[i]);
 		mc_interface_set_current(curr);
-		chThdSleepMilliseconds(100);
+		chThdSleepMilliseconds(50);
 		mc_interface_set_current(0);
 		chThdSleepMilliseconds(10);
 		curr = -curr;
@@ -473,7 +473,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 void app_balance_start(void) {
 	// First start only, override state to startup
 	state = STARTUP;
-	play_tune(balance_conf.deadzone == 1);
 	log_balance_state = state;
 	// Register terminal commands
 	terminal_register_command_callback(
@@ -1247,17 +1246,19 @@ static THD_FUNCTION(balance_thread, arg) {
 					reset_vars();
 					state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
 
+					if (balance_conf.deadzone > 0) {
+						play_tune(balance_conf.deadzone == 1);
+					}
 #ifdef HAS_EXT_BUZZER
 					// Let the rider know that the board is ready
 					beep_on(true);
 					chThdSleepMilliseconds(100);
 					beep_off(true);
-
 					// Are we within 5V of the LV tiltback threshold? Issue 1 beep for each volt below that
 					double bat_volts = GET_INPUT_VOLTAGE();
 					double threshold = balance_conf.tiltback_lv + 5;
 					if (bat_volts < threshold) {
-						chThdSleepMilliseconds(400);
+						chThdSleepMilliseconds(300);
 						while (bat_volts < threshold) {
 							chThdSleepMilliseconds(200);
 							beep_on(1);
