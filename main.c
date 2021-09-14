@@ -232,6 +232,19 @@ int main(void) {
 		}
 	}
 
+	// Read configuration / IMU init before motor init so the IMU is ready when the balance app starts
+	app_uartcomm_initialize();
+	app_configuration *appconf = mempools_alloc_appconf();
+	conf_general_read_app_configuration(appconf);
+	imu_init(&appconf->imu_conf);
+
+#ifdef HAS_EXT_BUZZER
+	// Let the rider know that the board is booting (short beep)
+	beep_on(1);
+	chThdSleepMilliseconds(20);
+	beep_off(1);
+#endif
+
 	ledpwm_init();
 	mc_interface_init();
 
@@ -245,17 +258,6 @@ int main(void) {
 	comm_can_init();
 #endif
 
-
-#ifdef HAS_EXT_BUZZER
-	// Let the rider know that the board is ready
-	beep_on(1);
-	chThdSleepMilliseconds(20);
-	beep_off(1);
-#endif
-
-	app_uartcomm_initialize();
-	app_configuration *appconf = mempools_alloc_appconf();
-	conf_general_read_app_configuration(appconf);
 	app_set_configuration(appconf);
 	app_uartcomm_start(UART_PORT_BUILTIN);
 	app_uartcomm_start(UART_PORT_EXTRA_HEADER);
@@ -287,9 +289,9 @@ int main(void) {
 	mempools_free_appconf(appconf);
 
 #ifdef HAS_EXT_BUZZER
-	// Let the rider know that the board is ready
+	// Let the rider know that the board has finished booting
 	beep_on(1);
-	chThdSleepMilliseconds(50);
+	chThdSleepMilliseconds(30);
 	beep_off(1);
 #endif
 	
@@ -301,7 +303,7 @@ int main(void) {
 	shutdown_init();
 #endif
 
-	imu_reset_orientation();
+	//imu_reset_orientation();
 
 #ifdef BOOT_OK_GPIO
 	chThdSleepMilliseconds(500);

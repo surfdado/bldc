@@ -33,6 +33,7 @@ static app_configuration appconf;
 static virtual_timer_t output_vt;
 static bool output_vt_init_done = false;
 static volatile bool output_disabled_now = false;
+static bool boot_done = false;
 
 // Private functions
 static void output_vt_cb(void *arg);
@@ -69,7 +70,11 @@ void app_set_configuration(app_configuration *conf) {
 	app_custom_stop();
 #endif
 
-	imu_init(&conf->imu_conf);
+	if (boot_done)
+		// this is a subsequent call, do the imu init now
+		imu_init(&conf->imu_conf);
+	else
+		boot_done = true;
 
 	if (appconf.app_to_use != APP_PPM &&
 			appconf.app_to_use != APP_PPM_UART &&
