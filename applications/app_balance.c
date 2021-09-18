@@ -1238,6 +1238,16 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Disable output
 				brake();
 				if(imu_startup_done()){
+					if ((mc_interface_get_configuration()->foc_motor_r == MCCONF_FOC_MOTOR_R) &&
+						(mc_interface_get_configuration()->foc_motor_flux_linkage == MCCONF_FOC_MOTOR_FLUX_LINKAGE)) {
+						// these are default values, this can't be good!
+						beep_on(true);
+						chThdSleepMilliseconds(100);
+						beep_off(true);
+						chThdSleepMilliseconds(100);
+						break;
+					}
+					
 					reset_vars();
 					state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
 
