@@ -1504,7 +1504,7 @@ static THD_FUNCTION(balance_thread, arg) {
 								buf2[0] = 5555;
 								buf3[0] = 5555;
 								buf4[0] = 5555;
-								buf5[0] = 5555;
+								buf5[0] = ttt_brake_ratio;
 								buf6[0] = logperiod;
 								buf7[0] = 5555;
 								buf8[0] = 5555;
