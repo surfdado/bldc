@@ -1576,27 +1576,33 @@ static THD_FUNCTION(balance_thread, arg) {
 				if (log_balance_state != FAULT_DUTY)
 					log_balance_state = state;
 
-				if (inactivity_timer == -1)
-					inactivity_timer = current_time;
+				if ((state != FAULT_STARTUP) || (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_lv + 2)))  {
+					// If the board got turned on without ever being ridden the state is FAULT_STARTUP
+					// This might mean the board is being charged (external anti-spark switch)
+					// In that case we only nag if we enter low voltage territorry!
 
-				if ((inactivity_timeout > 0) &&
-					(ST2S(current_time - inactivity_timer) > inactivity_timeout)){
+					if (inactivity_timer == -1)
+						inactivity_timer = current_time;
 
-					// triple-beep
-					beep_on(true);
-					chThdSleepMilliseconds(200);
-					beep_off(true);
-					chThdSleepMilliseconds(100);
-					beep_on(true);
-					chThdSleepMilliseconds(200);
-					beep_off(true);
-					chThdSleepMilliseconds(100);
-					beep_on(true);
-					chThdSleepMilliseconds(200);
-					beep_off(true);
+					if ((inactivity_timeout > 0) &&
+						(ST2S(current_time - inactivity_timer) > inactivity_timeout)){
 
-					inactivity_timeout = 10; // beep again in 10 seconds
-					inactivity_timer = current_time;
+						// triple-beep
+						beep_on(true);
+						chThdSleepMilliseconds(200);
+						beep_off(true);
+						chThdSleepMilliseconds(100);
+						beep_on(true);
+						chThdSleepMilliseconds(200);
+						beep_off(true);
+						chThdSleepMilliseconds(100);
+						beep_on(true);
+						chThdSleepMilliseconds(200);
+						beep_off(true);
+
+						inactivity_timeout = 10; // beep again in 10 seconds
+						inactivity_timer = current_time;
+					}
 				}
 
 				check_lock();
