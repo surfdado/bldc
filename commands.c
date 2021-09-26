@@ -407,7 +407,11 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 8)) {
-			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
+			if (buf1[0] == 5555) {
+				buffer_append_float16(send_buffer, logidx, 1e1, &ind);
+			}
+			else
+				buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
 			if (buf1[0] == 5555)
