@@ -19,6 +19,7 @@
 
 #include "conf_general.h"
 
+#include "app.h"
 #include "ch.h" // ChibiOS
 #include "hal.h" // ChibiOS HAL
 #include "mc_interface.h" // Motor control functions
