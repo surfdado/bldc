@@ -938,10 +938,12 @@ static void apply_torquetilt(void){
 
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 	int torque_sign = SIGN(torquetilt_filtered_current);
+	float abs_torque = fabsf(torquetilt_filtered_current);
 	float torque_offset = balance_conf.torquetilt_start_current;
 
 	float torquetilt_strength = tt_strength_uphill;
 	const float accel_factor = balance_conf.yaw_kd;
+	const float accel_factor2 = balance_conf.yaw_kd * 1.3;
 	bool braking = false;	// 1 = accel, -1 = braking
 
 	if ((abs_erpm > 250) && (torque_sign != SIGN(erpm))) {
@@ -956,7 +958,15 @@ static void apply_torquetilt(void){
 	measured_acc = fminf(acceleration, 5);
 
 	// expected acceleration is proportional to current (minus an offset, required to balance/maintain speed)
-	float expected_acc = (torquetilt_filtered_current - SIGN(erpm) * torque_offset) / accel_factor;
+	float expected_acc;
+	if (abs_torque < 25) {
+		expected_acc = (torquetilt_filtered_current - SIGN(erpm) * torque_offset) / accel_factor;
+	}
+	else {
+		// primitive linear approximation of non-linear torque-accel relationship
+		expected_acc = (torque_sign * 25 - SIGN(erpm) * torque_offset) / accel_factor;
+		expected_acc += torque_sign * (abs_torque - 25) / accel_factor2;
+	}
 
 	bool static_climb = false;
 	float acc_diff = expected_acc - measured_acc;
