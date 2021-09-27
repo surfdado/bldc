@@ -903,7 +903,13 @@ static void calculate_setpoint_interpolated(void){
 static void apply_noseangling(void){
 	// Nose angle adjustment, add variable then constant tiltback
 	float noseangling_target = 0;
-	if (fabsf(erpm) > tiltback_variable_max_erpm) {
+	if ((erpm > 0) && (torquetilt_interpolated < -1)) {
+		noseangling_target = 0;
+	}
+	else if ((erpm < 0) && (torquetilt_interpolated > 1)) {
+		noseangling_target = 0;
+	}
+	else if (fabsf(erpm) > tiltback_variable_max_erpm) {
 		noseangling_target = fabsf(balance_conf.tiltback_variable_max) * SIGN(erpm);
 	} else {
 		noseangling_target = tiltback_variable * erpm;
