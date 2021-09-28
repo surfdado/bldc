@@ -616,13 +616,13 @@ static void reset_vars(void){
 		// minimum values (even 0,0,0 is possible) for soft start:
 		kp = 1;
 		ki = 0;
-		kd = 10;
+		kd = 0;
 	}
 	else {
 		// Normal start / quick-start
 		kp = kp_acc * 0.8;
 		ki = ki_acc;
-		kd = kd_acc * 0.5;
+		kd = kd_acc * 0.1;
 	}
 	// first 100ms we don't want to use braking PIDs (hard coded to assume loop-Hz=1000)
 	start_counter_ms = START_GRACE_PERIOD_MS;
@@ -1434,32 +1434,22 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-				/*if (!braking ||
-					(fabsf(torquetilt_interpolated) > 1) ||
-					(start_counter_ms))
-					{*/
-					// acceleration and torquetilt situations
+
 				float p_multiplier = 1;
 				float di_multiplier = 1;
 				const float max_di_mult = 1.7;
-					if (fabsf(torquetilt_interpolated) > 2) {
-						// torque stiffness
-						p_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
-						di_multiplier = fminf(1 + p_multiplier / 2, max_di_mult);
-						p_multiplier = fminf(1 + p_multiplier, 2);
-					}
-					// stiffen kP and also kI (not quite as much as kP) with increased torquetilt
-					kp_target = kp_acc * p_multiplier;
-					ki_target = ki_acc * di_multiplier;
-					// basic kD is high already for center balancing, don't stiffen it more!
-					kd_target = kd_acc;
-					/*}
-				else {
-					// braking
-					kp_target = kp_brk;
-					ki_target = ki_brk;
-					kd_target = kd_brk;
-					}*/
+				if (fabsf(torquetilt_interpolated) > 2) {
+					// torque stiffness
+					p_multiplier = fabsf(torquetilt_interpolated) / 6 * tt_pid_intensity;
+					di_multiplier = fminf(1 + p_multiplier / 2, max_di_mult);
+					p_multiplier = fminf(1 + p_multiplier, 2);
+				}
+				// stiffen kP and also kI (not quite as much as kP) with increased torquetilt
+				kp_target = kp_acc * p_multiplier;
+				ki_target = ki_acc * di_multiplier;
+				// basic kD is high already for center balancing, don't stiffen it more!
+				kd_target = kd_acc;
+
 				if (abs_prop > center_boost_angle + 0.5) {
 					// Reduce kD (high by default to handle stiff center) when we're far away from the center!
 					kd_target = kd_target * di_multiplier / max_di_mult;	// 1200 / 1.7 = ~700
