@@ -63,11 +63,11 @@ typedef enum {
 
 typedef enum {
 	CENTERING = 0,
+	REVERSESTOP,
+	TILTBACK_NONE,
 	TILTBACK_DUTY,
 	TILTBACK_HV,
 	TILTBACK_LV,
-	TILTBACK_NONE,
-	REVERSESTOP
 } SetpointAdjustmentType;
 
 typedef enum {
@@ -113,16 +113,16 @@ static bool use_reverse_stop;
 
 // Feature: Soft Start
 #define START_GRACE_PERIOD_MS 100
+#define START_CENTER_DELAY_MS 1000
 static systime_t softstart_timer;
 static bool use_soft_start;
-static int start_counter_ms;
+static int center_stiffness_delay_ms;
 static unsigned int start_counter_clicks, start_counter_clicks_max, click_current;
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
-static float accel_gap;
-static float torquetilt_target, ttt_brake_ratio;
-static int tttarget_lag;
+static float accel_gap, accel_gap_aggregate;
+static float torquetilt_target, ttt_brake_ratio, sss;
 static int erpm_sign;
 
 // Feature: Turntilt
@@ -166,7 +166,7 @@ static SetpointAdjustmentType setpointAdjustmentType;
 static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, tb_highvoltage_timer;
-static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
+static float kp, ki, kd, kp_acc, ki_acc, kd_acc;
 static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
 static systime_t brake_timeout;
@@ -316,29 +316,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	yaw_aggregate_target = balance_conf.yaw_ki;			// borrow yaw_ki for aggregate yaw-change target
 	tuntilt_boost_per_erpm = (float)balance_conf.turntilt_erpm_boost / 100.0 / (float)balance_conf.turntilt_erpm_boost_end;
 
-	// Braking PID softness
-	int brake_pid_scaling = balance_conf.kd_pt1_highpass_frequency;
-	int brake_kp_scaling = brake_pid_scaling / 100;
-	int brake_ki_scaling = (brake_pid_scaling - (brake_kp_scaling * 100)) / 10;
-	int brake_kd_scaling = brake_pid_scaling - (brake_kp_scaling * 100) - (brake_ki_scaling * 10);
-	if (brake_kp_scaling < 2) {
-		brake_kp_scaling = 10;
-		brake_ki_scaling = 10;
-		brake_kd_scaling = 10;
-	}
-	if (brake_ki_scaling < 1)
-		brake_ki_scaling = 10;
-	if (brake_kd_scaling < 5)
-		brake_kd_scaling = 10;
-
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
 	kd_acc = fminf(balance_conf.kd, 1500);
-	// Reduced braking PIDs:
-	kp_brk = fminf(kp_acc / 10.0 * brake_kp_scaling, 5);
-	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
-	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1000);
 
 	// How much does Torque-Tilt stiffen PIDs - intensity = 1 doubles PIDs at 6 degree TT
 	tt_pid_intensity = balance_conf.booster_current;
@@ -436,7 +417,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	biquad_config(&accel_biquad, BQ_LOWPASS, cutoff_freq / ((float)balance_conf.hertz));
 
 	// Lingering nose tilt after braking
-	ttt_brake_ratio = app_get_configuration()->app_nrf_conf.channel;
+	ttt_brake_ratio = balance_conf.kd_pt1_highpass_frequency;
 	ttt_brake_ratio = fminf(ttt_brake_ratio, 20.0);
 	ttt_brake_ratio = fmaxf(ttt_brake_ratio, 1.0);
 	ttt_brake_ratio = (21.0 - ttt_brake_ratio) / 4.0;
@@ -574,7 +555,8 @@ static void reset_vars(void){
 	biquad_reset(&accel_biquad);
 	accel_gap = 0;
 	pid_value = 0;
-	tttarget_lag = 0;
+	accel_gap_aggregate = 0;
+	sss = -1;
 
 	for (int i=0; i<40; i++)
 		accelhist[i] = 0;
@@ -582,8 +564,8 @@ static void reset_vars(void){
 	accelavg = 0;
 
 	// Start with a minimal backwards push
-	float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
-	setpoint_target_interpolated = (fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
+	//float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
+	setpoint_target_interpolated = pitch_angle / 2;//(fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
 
 	// Soft-start vs normal aka quick-start:
 	if (use_soft_start) {
@@ -596,11 +578,11 @@ static void reset_vars(void){
 		// Normal start / quick-start
 		kp = kp_acc * 0.8;
 		ki = ki_acc;
-		kd = kd_acc * 0.1;
+		kd = 0;
 	}
-	// first 100ms we don't want to use braking PIDs (hard coded to assume loop-Hz=1000)
-	start_counter_ms = START_GRACE_PERIOD_MS;
 	start_counter_clicks = start_counter_clicks_max;
+	// ease into stiff center PIDs for first second (hard coded, assuming loop-Hz=1000)
+	center_stiffness_delay_ms = START_CENTER_DELAY_MS;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -936,6 +918,7 @@ static void apply_torquetilt(void){
 	if (balance_conf.torquetilt_strength == 0)
 		return;
 
+	sss = 0;
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 	int torque_sign = SIGN(torquetilt_filtered_current);
 	float abs_torque = fabsf(torquetilt_filtered_current);
@@ -1000,18 +983,26 @@ static void apply_torquetilt(void){
 		}
 	}
 
+	if (SIGN(accel_gap_aggregate) == SIGN(accel_gap))
+		accel_gap_aggregate += accel_gap;
+	else
+		accel_gap_aggregate = 0;
+
 	// now torquetilt target is purely based on gap between expected and actual acceleration
 	float new_ttt = torquetilt_strength * accel_gap;
 
 	// braking also should cause setpoint change lift, causing a delayed lingering nose lift
 	if (braking && (abs_erpm > 1000)) {
-		float downhill_damper = 1;
-		// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
-		if (((erpm > 1000) && (accel_gap < -1)) ||
-			((erpm < -1000) && (accel_gap > 1))) {
-			downhill_damper += fabsf(accel_gap) / 2;
+		// negative currents alone don't necessarily consitute active braking, look at proportional:
+		if (SIGN(proportional) != SIGN(erpm)) {
+			float downhill_damper = 1;
+			// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
+			if (((erpm > 1000) && (accel_gap < -1)) ||
+				((erpm < -1000) && (accel_gap > 1))) {
+				downhill_damper += fabsf(accel_gap) / 2;
+			}
+			new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 		}
-		new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 	}
 	torquetilt_target = torquetilt_target * 0.95 + 0.05 * new_ttt;
 	torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
@@ -1069,64 +1060,143 @@ static void apply_torquetilt(void){
 	// Key to keeping the board level and consistent is to determine the appropriate step size!
 	// We want to react quickly to changes, but we don't want to overreact to glitches in acceleration data
 	// or trigger oscillations...
-	if (erpm > 0) {
+	if ((abs_erpm < 500) && (fabsf(accel_gap) < 2)) {
+		// at low speed we can't trust the acceleration data too much => go easy
+		step_size = torquetilt_off_step_size;
+		sss = 0;
+	}
+	else if (erpm > 0) {
 		if (torquetilt_interpolated < 0) {
 			// downhill
-			if ((torquetilt_interpolated < torquetilt_target) && (torquetilt_target < 3) && (pitch_angle > -0.5)) {
-				step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+			if (torquetilt_interpolated < torquetilt_target) {
+				if ((accel_gap > 1) && (accel_gap_aggregate > 20)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 17;
+				}
+				else if ((pitch_angle < setpoint) && (pid_value > 0) && (accel_gap > 0.5)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 11;
+				}
+				else {
+					// to avoid oscillations we go down slower than we go up
+					step_size = torquetilt_off_step_size;
+					sss = 21;
+				}
 			}
 			else {
-				if (braking)
+				if (fabsf(accel_gap) < 0.5) {
+					step_size = torquetilt_off_step_size;
+					sss = 23;
+				}
+				else if (braking) {
 					step_size = torquetilt_on_step_size / 2;
+					sss = 1;
+				}
 				else {
 					step_size = torquetilt_on_step_size;
+					sss = 2;
 				}
 			}
 		}
 		else {
 			// uphill or other heavy resistance (grass, mud, etc)
 			if ((torquetilt_target > -3) && (torquetilt_interpolated > torquetilt_target)) {
-				if ((abs_erpm < 1000) && (pitch_angle < 0.5))
+				if ((abs_erpm < 1000) && (pitch_angle < 0.5)) {
 					// the rider is already pushing in the other direction, obstacle cleared?
-					step_size = torquetilt_on_step_size / 2;
+					step_size = torquetilt_off_step_size;// / 2;
+					sss = 3;
+				}
 				else if ((abs_erpm < 2000) && ((torquetilt_interpolated - torquetilt_target) > 2)) {
 					// we're pretty slow after braking with lots of remaining TT
 					step_size = torquetilt_on_step_size / 3;
+					sss = 4;
 				}
-				else
-					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
-			}else{
-				if (abs_erpm < 1000)
+				else if ((abs_erpm > 2000) && (torquetilt_target < 0)) {
 					step_size = torquetilt_on_step_size / 2;
-				else
+					sss = 19;
+				}
+				else {
+					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+					sss = 22;
+				}
+			}else{
+				if (fabsf(accel_gap) < 0.5) {
+					step_size = torquetilt_off_step_size;
+					sss = 27;
+				}
+				else if (abs_erpm < 1000) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 5;
+				}
+				else {
+					//
 					step_size = torquetilt_on_step_size;
+					sss = 6;
+				}
 
-				if (static_climb)
+				if (static_climb) {
 					step_size = step_size * 1.5;
+					sss = 31;
+				}
 			}
 		}
 	}
 	else {
 		if (torquetilt_interpolated > 0) {
 			// downhill
-			if ((torquetilt_interpolated > torquetilt_target) && (torquetilt_target > -3) && (pitch_angle < 0.5)) {
-				step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+			if ((torquetilt_interpolated > torquetilt_target) && (torquetilt_target > -3)) {
+				if ((pitch_angle > setpoint) && (pid_value < 0) && (accel_gap < 0)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 12;
+				}
+				else {
+					// to avoid oscillations we go down slower than we go up
+					step_size = torquetilt_off_step_size;
+					sss = 24;
+				}
 			}
 			else {
-				step_size = torquetilt_on_step_size / 2;
+				if (braking) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 13;
+				}
+				else {
+					step_size = torquetilt_on_step_size;
+					sss = 14;
+				}
 			}
 		}
 		else {
 			// uphill or other heavy resistance (grass, mud, etc)
 			if ((torquetilt_target < 3) && (torquetilt_interpolated < torquetilt_target)) {
-				if ((abs_erpm < 1000) && (pitch_angle > -0.5))
-					step_size = torquetilt_on_step_size / 2;
-				else
+				if ((abs_erpm < 1000) && (pitch_angle > -0.5)) {
+					step_size = torquetilt_off_step_size;// / 2;
+					sss = 8;
+				}
+				else {
 					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+					sss = 25;
+				}
 			}else{
-				step_size = torquetilt_on_step_size;
-				if (static_climb)
+				if (accel_gap == 0) {
+					step_size = torquetilt_off_step_size;
+					sss = 26;
+				}
+				else if (abs_erpm < 1000) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 9;
+				}
+				else {
+					step_size = torquetilt_on_step_size;
+					sss = 10;
+				}
+				if (static_climb) {
 					step_size = step_size * 1.5;
+					sss = 32;
+				}
 			}
 		}
 	}
@@ -1362,15 +1432,11 @@ static THD_FUNCTION(balance_thread, arg) {
 					break;
 				}
 
-				if(start_counter_ms){
-					start_counter_ms--;
-				}
-
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if ((setpointAdjustmentType != CENTERING) && (setpointAdjustmentType != REVERSESTOP)) {
+				if (setpointAdjustmentType >= TILTBACK_NONE) {
 					apply_noseangling();	// Always do nose angling, even during tiltback situations
 					apply_torquetilt();		// Torquetilt remains in effect even during tiltback situations
 					apply_turntilt();
@@ -1389,10 +1455,13 @@ static THD_FUNCTION(balance_thread, arg) {
 					tt_impact = integral_tt_impact_downhill;
 				else {
 					tt_impact = integral_tt_impact_uphill;
-					if (abs_erpm < 4000) {
+
+					const float max_impact_erpm = 2500;
+					const float starting_impact = 0.3;
+					if (abs_erpm < max_impact_erpm) {
 						// Reduced nose lift at lower speeds
 						// Creates a value between 0.5 and 1.0
-						float erpm_scaling = fmaxf(0.5, abs_erpm / 4000);
+						float erpm_scaling = fmaxf(starting_impact, abs_erpm / max_impact_erpm);
 						tt_impact = (1.0 - (1.0 - tt_impact) * erpm_scaling);
 					}
 				}
@@ -1406,9 +1475,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Identify braking based on angle of the board vs direction of movement
 				bool braking = (SIGN(proportional) != SIGN(erpm));
 
-				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-
 				float p_multiplier = 1;
 				float di_multiplier = 1;
 				const float max_di_mult = 1.7;
@@ -1428,7 +1495,26 @@ static THD_FUNCTION(balance_thread, arg) {
 					// Reduce kD (high by default to handle stiff center) when we're far away from the center!
 					kd_target = kd_target * di_multiplier / max_di_mult;	// 1200 / 1.7 = ~700
 				}
-				if (setpointAdjustmentType == REVERSESTOP) {
+				if (setpointAdjustmentType >= TILTBACK_NONE) {
+					// Ensure smooth transition between different PID targets
+					if (kp_target > kp) {
+						// stiffen quickly (~50ms)
+						kp = kp * 0.98 + kp_target * 0.02;
+						ki = ki * 0.98 + ki_target * 0.02;
+					}
+					else {
+						// loosen slowly (~500ms)
+						kp = kp * 0.998 + kp_target * 0.002;
+						ki = ki * 0.998 + ki_target * 0.002;
+					}
+					kd = kd * 0.98 + kd_target * 0.02;
+				}
+				else if (setpointAdjustmentType == CENTERING) {
+					kp = kp * 0.995 + kp_target * 0.005;
+					ki = ki * 0.995 + ki_target * 0.005;
+					kd = kd * 0.995 + kd_target * 0.005;
+				}
+				else if (setpointAdjustmentType == REVERSESTOP) {
 					kp_target = 2;
 					kd_target = 400;
 					integral = 0;
@@ -1436,28 +1522,14 @@ static THD_FUNCTION(balance_thread, arg) {
 					kd = kd * 0.99 + kd_target * 0.01;
 					ki = 0;
 				}
-				else {
-					// Ensure smooth transition between different PID targets
-					if (kp_target > kp) {
-						// stiffen quickly
-						kp = kp * 0.99 + kp_target * 0.01;
-						ki = ki * 0.99 + ki_target * 0.01;
-						kd = kd * 0.99 + kd_target * 0.01;
-					}
-					else {
-						// loosen slowly
-						kp = kp * 0.999 + kp_target * 0.001;
-						ki = ki * 0.999 + ki_target * 0.001;
-						kd = kd * 0.999 + kd_target * 0.001;
-					}
-				}
 
 				float pid_prop = 0, pid_derivative = 0, pid_integral = 0;
 
 				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
-					float pid_target = (kp * proportional) + (kd * derivative);
-					pid_value = 0.05 * pid_target + 0.95 * pid_value;
+					pid_prop = kp * proportional;
+					pid_derivative = kd * derivative;
+					pid_value = 0.05 * (pid_prop + pid_derivative) + 0.95 * pid_value;
 					// once centering is done, start integral component from 0
 					integral = 0;
 					ki = 0;
@@ -1468,9 +1540,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					pid_prop = kp * proportional;
 					float center_boost = fminf(abs_prop, center_boost_angle);
 					float accel_boost = 0;
-					if(start_counter_ms) {
+					if(center_stiffness_delay_ms) {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional) *
-							(START_GRACE_PERIOD_MS - start_counter_ms) / START_GRACE_PERIOD_MS;
+							(START_CENTER_DELAY_MS - center_stiffness_delay_ms) / START_CENTER_DELAY_MS;
+						center_stiffness_delay_ms--;
 					}
 					else {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional);
@@ -1516,8 +1589,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					// I:
 					pid_integral = ki * integral;
 
-					// smoothen out requested current (introduce ~10ms effective latency):
-					pid_value = 0.1 * (new_pd_value + pid_integral) + 0.9 * pid_value;
+					// smoothen out requested current (introduce ~5ms effective latency)
+					pid_value = 0.2 * (new_pd_value + pid_integral) + 0.8 * pid_value;
 				}
 
 				last_proportional = proportional;
