@@ -1465,16 +1465,16 @@ static THD_FUNCTION(balance_thread, arg) {
 				else {
 					// Ensure smooth transition between different PID targets
 					if (kp_target > kp) {
-						// stiffen quickly
-						kp = kp * 0.99 + kp_target * 0.01;
-						ki = ki * 0.99 + ki_target * 0.01;
-						kd = kd * 0.99 + kd_target * 0.01;
+						// stiffen quickly (~100ms)
+						kp = kp * 0.98 + kp_target * 0.02;
+						ki = ki * 0.98 + ki_target * 0.02;
+						kd = kd * 0.98 + kd_target * 0.02;
 					}
 					else {
-						// loosen slowly
-						kp = kp * 0.999 + kp_target * 0.001;
-						ki = ki * 0.999 + ki_target * 0.001;
-						kd = kd * 0.999 + kd_target * 0.001;
+						// loosen slowly (~1000ms)
+						kp = kp * 0.998 + kp_target * 0.002;
+						ki = ki * 0.998 + ki_target * 0.002;
+						kd = kd * 0.998 + kd_target * 0.002;
 					}
 				}
 
