@@ -120,9 +120,8 @@ static unsigned int start_counter_clicks, start_counter_clicks_max, click_curren
 
 // Feature: Adaptive Torque Response
 static float acceleration, acceleration_raw, last_erpm, shedfactor;
-static float accel_gap;
-static float torquetilt_target, ttt_brake_ratio;
-static int tttarget_lag;
+static float accel_gap, accel_gap_aggregate;
+static float torquetilt_target, ttt_brake_ratio, sss;
 static int erpm_sign;
 
 // Feature: Turntilt
@@ -600,7 +599,8 @@ static void reset_vars(void){
 	biquad_reset(&accel_biquad);
 	accel_gap = 0;
 	pid_value = 0;
-	tttarget_lag = 0;
+	accel_gap_aggregate = 0;
+	sss = -1;
 
 	for (int i=0; i<40; i++)
 		accelhist[i] = 0;
@@ -962,6 +962,7 @@ static void apply_torquetilt(void){
 	if (balance_conf.torquetilt_strength == 0)
 		return;
 
+	sss = 0;
 	torquetilt_filtered_current = biquad_process(&torquetilt_current_biquad, motor_current);
 	int torque_sign = SIGN(torquetilt_filtered_current);
 	float abs_torque = fabsf(torquetilt_filtered_current);
@@ -1026,18 +1027,26 @@ static void apply_torquetilt(void){
 		}
 	}
 
+	if (SIGN(accel_gap_aggregate) == SIGN(accel_gap))
+		accel_gap_aggregate += accel_gap;
+	else
+		accel_gap_aggregate = 0;
+
 	// now torquetilt target is purely based on gap between expected and actual acceleration
 	float new_ttt = torquetilt_strength * accel_gap;
 
 	// braking also should cause setpoint change lift, causing a delayed lingering nose lift
 	if (braking && (abs_erpm > 1000)) {
-		float downhill_damper = 1;
-		// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
-		if (((erpm > 1000) && (accel_gap < -1)) ||
-			((erpm < -1000) && (accel_gap > 1))) {
-			downhill_damper += fabsf(accel_gap) / 2;
+		// negative currents alone don't necessarily consitute active braking, look at proportional:
+		if (SIGN(proportional) != SIGN(erpm)) {
+			float downhill_damper = 1;
+			// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
+			if (((erpm > 1000) && (accel_gap < -1)) ||
+				((erpm < -1000) && (accel_gap > 1))) {
+				downhill_damper += fabsf(accel_gap) / 2;
+			}
+			new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 		}
-		new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 	}
 	torquetilt_target = torquetilt_target * 0.95 + 0.05 * new_ttt;
 	torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
@@ -1095,64 +1104,139 @@ static void apply_torquetilt(void){
 	// Key to keeping the board level and consistent is to determine the appropriate step size!
 	// We want to react quickly to changes, but we don't want to overreact to glitches in acceleration data
 	// or trigger oscillations...
-	if (erpm > 0) {
+	if ((abs_erpm < 500) && (fabsf(accel_gap) < 2)) {
+		// at low speed we can't trust the acceleration data too much => go easy
+		step_size = torquetilt_off_step_size;
+		sss = 0;
+	}
+	else if (erpm > 0) {
 		if (torquetilt_interpolated < 0) {
 			// downhill
-			if ((torquetilt_interpolated < torquetilt_target) && (torquetilt_target < 3) && (pitch_angle > -0.5)) {
-				step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+			if (torquetilt_interpolated < torquetilt_target) {
+				if ((accel_gap > 1) && (accel_gap_aggregate > 20)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 17;
+				}
+				else if ((pitch_angle < setpoint) && (pid_value > 0) && (accel_gap > 0.5)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 11;
+				}
+				else {
+					// to avoid oscillations we go down slower than we go up
+					step_size = torquetilt_off_step_size;
+					sss = 21;
+				}
 			}
 			else {
-				if (braking)
+				if (braking) {
 					step_size = torquetilt_on_step_size / 2;
+					sss = 1;
+				}
 				else {
 					step_size = torquetilt_on_step_size;
+					sss = 2;
 				}
 			}
 		}
 		else {
 			// uphill or other heavy resistance (grass, mud, etc)
 			if ((torquetilt_target > -3) && (torquetilt_interpolated > torquetilt_target)) {
-				if ((abs_erpm < 1000) && (pitch_angle < 0.5))
+				if ((abs_erpm < 1000) && (pitch_angle < 0.5)) {
 					// the rider is already pushing in the other direction, obstacle cleared?
-					step_size = torquetilt_on_step_size / 2;
+					step_size = torquetilt_off_step_size;// / 2;
+					sss = 3;
+				}
 				else if ((abs_erpm < 2000) && ((torquetilt_interpolated - torquetilt_target) > 2)) {
 					// we're pretty slow after braking with lots of remaining TT
 					step_size = torquetilt_on_step_size / 3;
+					sss = 4;
 				}
-				else
-					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
-			}else{
-				if (abs_erpm < 1000)
+				else if ((abs_erpm > 2000) && (torquetilt_target < 0)) {
 					step_size = torquetilt_on_step_size / 2;
-				else
+					sss = 19;
+				}
+				else {
+					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+					sss = 22;
+				}
+			}else{
+				if (accel_gap == 0) {
+					step_size = torquetilt_off_step_size;
+					sss = 23;
+				}
+				else if (abs_erpm < 1000) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 5;
+				}
+				else {
+					//
 					step_size = torquetilt_on_step_size;
+					sss = 6;
+				}
 
-				if (static_climb)
+				if (static_climb) {
 					step_size = step_size * 1.5;
+					sss = 31;
+				}
 			}
 		}
 	}
 	else {
 		if (torquetilt_interpolated > 0) {
 			// downhill
-			if ((torquetilt_interpolated > torquetilt_target) && (torquetilt_target > -3) && (pitch_angle < 0.5)) {
-				step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+			if ((torquetilt_interpolated > torquetilt_target) && (torquetilt_target > -3)) {
+				if ((pitch_angle > setpoint) && (pid_value < 0) && (accel_gap < 0)) {
+					// looks like torquetilt is reversing course
+					step_size = torquetilt_on_step_size;
+					sss = 12;
+				}
+				else {
+					// to avoid oscillations we go down slower than we go up
+					step_size = torquetilt_off_step_size;
+					sss = 24;
+				}
 			}
 			else {
-				step_size = torquetilt_on_step_size / 2;
+				if (braking) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 13;
+				}
+				else {
+					step_size = torquetilt_on_step_size;
+					sss = 14;
+				}
 			}
 		}
 		else {
 			// uphill or other heavy resistance (grass, mud, etc)
 			if ((torquetilt_target < 3) && (torquetilt_interpolated < torquetilt_target)) {
-				if ((abs_erpm < 1000) && (pitch_angle > -0.5))
-					step_size = torquetilt_on_step_size / 2;
-				else
+				if ((abs_erpm < 1000) && (pitch_angle > -0.5)) {
+					step_size = torquetilt_off_step_size;// / 2;
+					sss = 8;
+				}
+				else {
 					step_size = torquetilt_off_step_size;		// to avoid oscillations we go down slower than we go up
+					sss = 25;
+				}
 			}else{
-				step_size = torquetilt_on_step_size;
-				if (static_climb)
+				if (accel_gap == 0) {
+					step_size = torquetilt_off_step_size;
+					sss = 26;
+				}
+				else if (abs_erpm < 1000) {
+					step_size = torquetilt_on_step_size / 2;
+					sss = 9;
+				}
+				else {
+					step_size = torquetilt_on_step_size;
+					sss = 10;
+				}
+				if (static_climb) {
 					step_size = step_size * 1.5;
+					sss = 32;
+				}
 			}
 		}
 	}
@@ -1415,10 +1499,13 @@ static THD_FUNCTION(balance_thread, arg) {
 					tt_impact = integral_tt_impact_downhill;
 				else {
 					tt_impact = integral_tt_impact_uphill;
-					if (abs_erpm < 4000) {
+
+					const float max_impact_erpm = 2500;
+					const float starting_impact = 0.3;
+					if (abs_erpm < max_impact_erpm) {
 						// Reduced nose lift at lower speeds
 						// Creates a value between 0.5 and 1.0
-						float erpm_scaling = fmaxf(0.5, abs_erpm / 4000);
+						float erpm_scaling = fmaxf(starting_impact, abs_erpm / max_impact_erpm);
 						tt_impact = (1.0 - (1.0 - tt_impact) * erpm_scaling);
 					}
 				}
@@ -1542,8 +1629,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					// I:
 					pid_integral = ki * integral;
 
-					// smoothen out requested current (introduce ~10ms effective latency):
-					pid_value = 0.1 * (new_pd_value + pid_integral) + 0.9 * pid_value;
+					// smoothen out requested current (introduce ~5ms effective latency)
+					pid_value = 0.2 * (new_pd_value + pid_integral) + 0.8 * pid_value;
 				}
 
 				last_proportional = proportional;
