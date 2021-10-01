@@ -63,11 +63,11 @@ typedef enum {
 
 typedef enum {
 	CENTERING = 0,
+	REVERSESTOP,
+	TILTBACK_NONE,
 	TILTBACK_DUTY,
 	TILTBACK_HV,
 	TILTBACK_LV,
-	TILTBACK_NONE,
-	REVERSESTOP
 } SetpointAdjustmentType;
 
 typedef enum {
@@ -113,9 +113,10 @@ static bool use_reverse_stop;
 
 // Feature: Soft Start
 #define START_GRACE_PERIOD_MS 100
+#define START_CENTER_DELAY_MS 1000
 static systime_t softstart_timer;
 static bool use_soft_start;
-static int start_counter_ms;
+static int center_stiffness_delay_ms;
 static unsigned int start_counter_clicks, start_counter_clicks_max, click_current;
 
 // Feature: Adaptive Torque Response
@@ -165,7 +166,7 @@ static SetpointAdjustmentType setpointAdjustmentType;
 static systime_t current_time, last_time, diff_time, loop_overshoot;
 static float filtered_loop_overshoot, loop_overshoot_alpha, filtered_diff_time;
 static systime_t fault_angle_pitch_timer, fault_angle_roll_timer, fault_switch_timer, fault_switch_half_timer, fault_duty_timer, tb_highvoltage_timer;
-static float kp, ki, kd, kp_acc, ki_acc, kd_acc, kp_brk, ki_brk, kd_brk;
+static float kp, ki, kd, kp_acc, ki_acc, kd_acc;
 static float d_pt1_lowpass_state, d_pt1_lowpass_k;
 static float motor_timeout;
 static systime_t brake_timeout;
@@ -323,29 +324,10 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	yaw_aggregate_target = balance_conf.yaw_ki;			// borrow yaw_ki for aggregate yaw-change target
 	tuntilt_boost_per_erpm = (float)balance_conf.turntilt_erpm_boost / 100.0 / (float)balance_conf.turntilt_erpm_boost_end;
 
-	// Braking PID softness
-	int brake_pid_scaling = balance_conf.kd_pt1_highpass_frequency;
-	int brake_kp_scaling = brake_pid_scaling / 100;
-	int brake_ki_scaling = (brake_pid_scaling - (brake_kp_scaling * 100)) / 10;
-	int brake_kd_scaling = brake_pid_scaling - (brake_kp_scaling * 100) - (brake_ki_scaling * 10);
-	if (brake_kp_scaling < 2) {
-		brake_kp_scaling = 10;
-		brake_ki_scaling = 10;
-		brake_kd_scaling = 10;
-	}
-	if (brake_ki_scaling < 1)
-		brake_ki_scaling = 10;
-	if (brake_kd_scaling < 5)
-		brake_kd_scaling = 10;
-
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
 	ki_acc = fminf(balance_conf.ki, 0.01);
 	kd_acc = fminf(balance_conf.kd, 1500);
-	// Reduced braking PIDs:
-	kp_brk = fminf(kp_acc / 10.0 * brake_kp_scaling, 5);
-	ki_brk = fminf(ki_acc / 10.0 * brake_ki_scaling, 0.005);
-	kd_brk = fminf(kd_acc / 10.0 * brake_kd_scaling, 1000);
 
 	// How much does Torque-Tilt stiffen PIDs - intensity = 1 doubles PIDs at 6 degree TT
 	tt_pid_intensity = balance_conf.booster_current;
@@ -609,7 +591,7 @@ static void reset_vars(void){
 
 	// Start with a minimal backwards push
 	float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
-	setpoint_target_interpolated = (fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
+	setpoint_target_interpolated = pitch_angle / 2;//(fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
 
 	// Soft-start vs normal aka quick-start:
 	if (use_soft_start) {
@@ -622,11 +604,11 @@ static void reset_vars(void){
 		// Normal start / quick-start
 		kp = kp_acc * 0.8;
 		ki = ki_acc;
-		kd = kd_acc * 0.1;
+		kd = 0;
 	}
-	// first 100ms we don't want to use braking PIDs (hard coded to assume loop-Hz=1000)
-	start_counter_ms = START_GRACE_PERIOD_MS;
 	start_counter_clicks = start_counter_clicks_max;
+	// ease into stiff center PIDs for first second (hard coded, assuming loop-Hz=1000)
+	center_stiffness_delay_ms = START_CENTER_DELAY_MS;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -1472,15 +1454,11 @@ static THD_FUNCTION(balance_thread, arg) {
 					break;
 				}
 
-				if(start_counter_ms){
-					start_counter_ms--;
-				}
-
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
 				calculate_setpoint_interpolated();
 				setpoint = setpoint_target_interpolated;
-				if ((setpointAdjustmentType != CENTERING) && (setpointAdjustmentType != REVERSESTOP)) {
+				if (setpointAdjustmentType >= TILTBACK_NONE) {
 					apply_noseangling();	// Always do nose angling, even during tiltback situations
 					apply_torquetilt();		// Torquetilt remains in effect even during tiltback situations
 					apply_turntilt();
@@ -1519,9 +1497,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Identify braking based on angle of the board vs direction of movement
 				bool braking = (SIGN(proportional) != SIGN(erpm));
 
-				// Switch between soft breaking PIDs and harder acceleration / torquetilt PIDs
 				float kp_target, ki_target, kd_target;
-
 				float p_multiplier = 1;
 				float di_multiplier = 1;
 				const float max_di_mult = 1.7;
@@ -1541,7 +1517,26 @@ static THD_FUNCTION(balance_thread, arg) {
 					// Reduce kD (high by default to handle stiff center) when we're far away from the center!
 					kd_target = kd_target * di_multiplier / max_di_mult;	// 1200 / 1.7 = ~700
 				}
-				if (setpointAdjustmentType == REVERSESTOP) {
+				if (setpointAdjustmentType >= TILTBACK_NONE) {
+					// Ensure smooth transition between different PID targets
+					if (kp_target > kp) {
+						// stiffen quickly (~50ms)
+						kp = kp * 0.98 + kp_target * 0.02;
+						ki = ki * 0.98 + ki_target * 0.02;
+					}
+					else {
+						// loosen slowly (~500ms)
+						kp = kp * 0.998 + kp_target * 0.002;
+						ki = ki * 0.998 + ki_target * 0.002;
+					}
+					kd = kd * 0.98 + kd_target * 0.02;
+				}
+				else if (setpointAdjustmentType == CENTERING) {
+					kp = kp * 0.995 + kp_target * 0.005;
+					ki = ki * 0.995 + ki_target * 0.005;
+					kd = kd * 0.995 + kd_target * 0.005;
+				}
+				else if (setpointAdjustmentType == REVERSESTOP) {
 					kp_target = 2;
 					kd_target = 400;
 					integral = 0;
@@ -1549,28 +1544,14 @@ static THD_FUNCTION(balance_thread, arg) {
 					kd = kd * 0.99 + kd_target * 0.01;
 					ki = 0;
 				}
-				else {
-					// Ensure smooth transition between different PID targets
-					if (kp_target > kp) {
-						// stiffen quickly (~100ms)
-						kp = kp * 0.98 + kp_target * 0.02;
-						ki = ki * 0.98 + ki_target * 0.02;
-						kd = kd * 0.98 + kd_target * 0.02;
-					}
-					else {
-						// loosen slowly (~1000ms)
-						kp = kp * 0.998 + kp_target * 0.002;
-						ki = ki * 0.998 + ki_target * 0.002;
-						kd = kd * 0.998 + kd_target * 0.002;
-					}
-				}
 
 				float pid_prop = 0, pid_derivative = 0, pid_integral = 0;
 
 				if (use_soft_start && (setpointAdjustmentType == CENTERING)) {
 					// soft-start
-					float pid_target = (kp * proportional) + (kd * derivative);
-					pid_value = 0.05 * pid_target + 0.95 * pid_value;
+					pid_prop = kp * proportional;
+					pid_derivative = kd * derivative;
+					pid_value = 0.05 * (pid_prop + pid_derivative) + 0.95 * pid_value;
 					// once centering is done, start integral component from 0
 					integral = 0;
 					ki = 0;
@@ -1581,9 +1562,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					pid_prop = kp * proportional;
 					float center_boost = fminf(abs_prop, center_boost_angle);
 					float accel_boost = 0;
-					if(start_counter_ms) {
+					if(center_stiffness_delay_ms) {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional) *
-							(START_GRACE_PERIOD_MS - start_counter_ms) / START_GRACE_PERIOD_MS;
+							(START_CENTER_DELAY_MS - center_stiffness_delay_ms) / START_CENTER_DELAY_MS;
+						center_stiffness_delay_ms--;
 					}
 					else {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional);
