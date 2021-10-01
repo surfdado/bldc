@@ -1627,7 +1627,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// LOG:
 				if (logidx < LOGBUFSIZE) {
 					float trig = balance_conf.roll_steer_erpm_kp;
-					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+100)) || (logidx > 0)) {
+					if (((fabsf(smooth_erpm) >= trig) && (fabsf(smooth_erpm) < trig+1000)) || (logidx > 0)) {
 						logdelaycounter++;
 						b0 += pitch_angle;
 						b1 += pid_derivative;
@@ -1637,7 +1637,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						b5 += torquetilt_filtered_current;
 						b6 += last_erpm;
 						b7 += setpoint;
-						b8 += pid_value;
+						b8 = sss;//pid_value;
 						b9 += pid_integral;
 
 						if (logdelaycounter >= logperiod) {
@@ -1665,7 +1665,7 @@ static THD_FUNCTION(balance_thread, arg) {
 							buf5[logidx] = b5 / logperiod;
 							buf6[logidx] = b6 / logperiod;
 							buf7[logidx] = b7 / logperiod;
-							buf8[logidx] = b8 / logperiod;
+							buf8[logidx] = b8;// / logperiod;
 							buf9[logidx] = b9 / logperiod;
 							logidx++;
 							b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 = 0;
