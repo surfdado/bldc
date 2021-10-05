@@ -139,6 +139,7 @@ static float accel_boost_threshold, accel_boost_threshold2, accel_boost_intensit
 
 // Inactivity Timeout
 static float inactivity_timer, inactivity_timeout;
+static float lock_timer;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -1448,6 +1449,7 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
 				log_balance_state = state + 100 * setpointAdjustmentType;
 				inactivity_timer = -1;
+				lock_state = -1;
 
 				// Check for faults
 				if(check_faults(false)){
@@ -1803,6 +1805,11 @@ static THD_FUNCTION(balance_thread, arg) {
  * check_lock:	perform lock management
  */
 static void check_lock() {
+	// require a minimum of 50ms delay between each step (to avoid false triggers)
+	if (ST2MS(current_time - lock_timer) < 50)
+		return;
+
+	int old_lock_state = lock_state;
 	switch(lock_state) {
 	case -1: if (switch_state == ON) lock_state = 0;
 		break;
@@ -1841,6 +1848,10 @@ static void check_lock() {
 		}
 		break;
 	default:;
+	}
+
+	if (old_lock_state != lock_state) {
+		lock_timer = current_time;
 	}
 }
 
