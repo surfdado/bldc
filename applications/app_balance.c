@@ -425,7 +425,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	biquad_config(&accel_biquad, BQ_LOWPASS, cutoff_freq / ((float)balance_conf.hertz));
 
 	// Lingering nose tilt after braking
-	ttt_brake_ratio = app_get_configuration()->app_nrf_conf.channel;
+	ttt_brake_ratio = balance_conf.kd_pt1_highpass_frequency;
 	ttt_brake_ratio = fminf(ttt_brake_ratio, 20.0);
 	ttt_brake_ratio = fmaxf(ttt_brake_ratio, 1.0);
 	ttt_brake_ratio = (21.0 - ttt_brake_ratio) / 4.0;
