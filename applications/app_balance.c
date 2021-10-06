@@ -1113,7 +1113,11 @@ static void apply_torquetilt(void){
 				}
 			}
 			else {
-				if (braking) {
+				if (fabsf(accel_gap) < 0.5) {
+					step_size = torquetilt_off_step_size;
+					sss = 23;
+				}
+				else if (braking) {
 					step_size = torquetilt_on_step_size / 2;
 					sss = 1;
 				}
@@ -1145,9 +1149,9 @@ static void apply_torquetilt(void){
 					sss = 22;
 				}
 			}else{
-				if (accel_gap == 0) {
+				if (fabsf(accel_gap) < 0.5) {
 					step_size = torquetilt_off_step_size;
-					sss = 23;
+					sss = 27;
 				}
 				else if (abs_erpm < 1000) {
 					step_size = torquetilt_on_step_size / 2;
