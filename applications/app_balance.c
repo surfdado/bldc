@@ -591,7 +591,7 @@ static void reset_vars(void){
 	accelavg = 0;
 
 	// Start with a minimal backwards push
-	float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
+	//float start_offset_angle = balance_conf.startup_pitch_tolerance + 1;
 	setpoint_target_interpolated = pitch_angle / 2;//(fabsf(pitch_angle) - start_offset_angle) * SIGN(pitch_angle);
 
 	// Soft-start vs normal aka quick-start:
