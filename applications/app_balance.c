@@ -175,6 +175,11 @@ static float accelhist[ACCEL_ARRAY_SIZE];
 static int accelidx;
 static float accelavg;
 
+// Odometer
+static systime_t odo_timer;
+static int odometer_dirty;
+static uint64_t odometer;
+
 // Lock
 static int lock_state;
 static bool is_locked;
@@ -508,6 +513,9 @@ void app_balance_start(void) {
 		"Output real time values to the experiments graph",
 		"[Field Number] [Plot 1-6]",
 		terminal_experiment);
+	odometer_dirty = 0;
+	odometer = mc_interface_get_odometer();
+
 	// Start the balance thread
 	app_thread = chThdCreateStatic(balance_thread_wa, sizeof(balance_thread_wa), NORMALPRIO, balance_thread, NULL);
 }
@@ -1455,6 +1463,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				inactivity_timer = -1;
 				lock_state = -1;
+				odometer_dirty = 1;
 
 				// Check for faults
 				if(check_faults(false)){
@@ -1728,6 +1737,23 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_REVERSE):
 				if (log_balance_state != FAULT_DUTY)
 					log_balance_state = state;
+
+				// Make odometer persistent if we've gone 100m or more
+				if (odometer_dirty > 0) {
+					if (mc_interface_get_odometer() > odometer + 100) {
+						if (odometer_dirty == 1) {
+							// Wait 2 seconds before writing to avoid writing if immediately continuing to ride
+							odo_timer = current_time;
+							odometer_dirty++;
+						}
+						else if (ST2S(current_time - odo_timer) > 2) {
+							conf_general_store_backup_data();
+							odometer = mc_interface_get_odometer();
+							odometer_dirty = 0;
+							beep_alert(1, 0);
+						}
+					}
+				}
 
 				if ((state != FAULT_STARTUP) || (GET_INPUT_VOLTAGE() < (balance_conf.tiltback_lv + 2)))  {
 					// If the board got turned on without ever being ridden the state is FAULT_STARTUP
