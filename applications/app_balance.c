@@ -1451,7 +1451,8 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (RUNNING_TILTBACK_DUTY):
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
-				log_balance_state = state + 100 * setpointAdjustmentType;
+				log_balance_state = state + (setpointAdjustmentType << 4);
+
 				inactivity_timer = -1;
 				lock_state = -1;
 
