@@ -117,6 +117,8 @@ static bool use_reverse_stop;
 static systime_t softstart_timer;
 static bool use_soft_start;
 static int center_stiffness_delay_ms;
+static int center_jerk_duration_ms, center_jerk_counter;
+static float center_jerk_strength, center_jerk_adder;
 static unsigned int start_counter_clicks, start_counter_clicks_max, click_current;
 
 // Feature: Adaptive Torque Response
@@ -299,6 +301,14 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Feature: Soft Start
 	use_soft_start = (balance_conf.startup_speed < 10);
+	center_jerk_duration_ms = balance_conf.roll_steer_erpm_kp;
+	center_jerk_strength = balance_conf.yaw_current_clamp;
+	if (center_jerk_strength > 50)
+		center_jerk_strength = 0;
+	if (center_jerk_strength < -50)
+		center_jerk_strength = 0;
+	if (center_jerk_duration_ms > 100)
+		center_jerk_duration_ms = 0;
 
 	// if the full switch delay ends in 1, we don't allow high speed full switch faults
 	int fullswitch_delay = balance_conf.fault_delay_switch_full / 10;
@@ -584,6 +594,8 @@ static void reset_vars(void){
 	start_counter_clicks = start_counter_clicks_max;
 	// ease into stiff center PIDs for first second (hard coded, assuming loop-Hz=1000)
 	center_stiffness_delay_ms = START_CENTER_DELAY_MS;
+	center_jerk_counter = 0;
+	center_jerk_adder = 0;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -1547,6 +1559,18 @@ static THD_FUNCTION(balance_thread, arg) {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional) *
 							(START_CENTER_DELAY_MS - center_stiffness_delay_ms) / START_CENTER_DELAY_MS;
 						center_stiffness_delay_ms--;
+						if (center_jerk_counter < center_jerk_duration_ms) {
+							if (center_jerk_counter > center_jerk_duration_ms / 2) {
+								center_jerk_adder = center_jerk_adder*0.95 + center_jerk_strength*0.05;
+							}
+							else {
+								center_jerk_adder = center_jerk_adder*0.95 - center_jerk_strength*0.05;
+							}
+							pid_prop += center_jerk_adder;
+							if (center_jerk_counter == 0)
+								beep_alert(1, 0);
+							center_jerk_counter++;
+						}
 					}
 					else {
 						pid_prop += center_boost * center_boost_kp_adder * SIGN(proportional);
