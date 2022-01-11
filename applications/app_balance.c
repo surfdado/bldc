@@ -128,8 +128,11 @@ static float torquetilt_target, ttt_brake_ratio, sss;
 static int erpm_sign;
 
 // Feature: Turntilt
-static float last_yaw_angle, yaw_angle, abs_yaw_change, yaw_change, yaw_aggregate;
+static float last_yaw_angle, yaw_angle, abs_yaw_change, last_yaw_change, yaw_change, yaw_aggregate;
 static float tuntilt_boost_per_erpm, yaw_aggregate_target;
+static bool cutback;
+static bool cutback_enable;
+static float cutback_minspeed;
 
 // Feature: PID toning
 static float center_boost_angle, center_boost_kp_adder;
@@ -144,7 +147,7 @@ static float inactivity_timer, inactivity_timeout;
 static float lock_timer;
 
 // Runtime values read from elsewhere
-static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
+static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, roll_aggregate, roll_aggregate_threshold;
 static float gyro[3];
 static float duty_cycle, abs_duty_cycle;
 static float erpm, abs_erpm;
@@ -326,6 +329,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Feature: Turntilt
 	yaw_aggregate_target = balance_conf.yaw_ki;			// borrow yaw_ki for aggregate yaw-change target
 	tuntilt_boost_per_erpm = (float)balance_conf.turntilt_erpm_boost / 100.0 / (float)balance_conf.turntilt_erpm_boost_end;
+	cutback_enable = true;
+	cutback_minspeed = 2000;
+	roll_aggregate_threshold = 5000;
 
 	// Guardrails for Onewheel PIDs (outlandish PIDs can break your motor!)
 	kp_acc = fminf(balance_conf.kp, 10);
@@ -555,6 +561,11 @@ static void reset_vars(void){
 	biquad_reset(&torquetilt_current_biquad);
 	turntilt_target = 0;
 	turntilt_interpolated = 0;
+	last_yaw_change = 0;
+	last_yaw_angle = 0;
+	yaw_aggregate = 0;
+	roll_aggregate = 0;
+	cutback = false;
 	setpointAdjustmentType = CENTERING;
 	state = RUNNING;
 	current_time = 0;
@@ -1003,71 +1014,36 @@ static void apply_torquetilt(void){
 
 	// now torquetilt target is purely based on gap between expected and actual acceleration
 	float new_ttt = torquetilt_strength * accel_gap;
+	bool cutback_response = false;
 
-	// braking also should cause setpoint change lift, causing a delayed lingering nose lift
-	if (braking && (abs_erpm > 1000)) {
-		// negative currents alone don't necessarily consitute active braking, look at proportional:
-		if (SIGN(proportional) != SIGN(erpm)) {
-			float downhill_damper = 1;
-			// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
-			if (((erpm > 1000) && (accel_gap < -1)) ||
-				((erpm < -1000) && (accel_gap > 1))) {
-				downhill_damper += fabsf(accel_gap) / 2;
+	if (cutback && (abs_erpm > cutback_minspeed)) {
+		// cutbacks trump any other action (for now)
+		if (SIGN(new_ttt) == SIGN(erpm)) {
+			new_ttt /= 4;
+		}
+		else {
+			new_ttt *= 1.5;
+		}
+		cutback_response = true;
+	}
+	else {
+		// braking also should cause setpoint change lift, causing a delayed lingering nose lift
+		if (braking && (abs_erpm > 1000)) {
+			// negative currents alone don't necessarily consitute active braking, look at proportional:
+			if (SIGN(proportional) != SIGN(erpm)) {
+				float downhill_damper = 1;
+				// if we're braking on a downhill we don't want braking to lift the setpoint quite as much
+				if (((erpm > 1000) && (accel_gap < -1)) ||
+					((erpm < -1000) && (accel_gap > 1))) {
+					downhill_damper += fabsf(accel_gap) / 2;
+				}
+				new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 			}
-			new_ttt += (pitch_angle - setpoint) / ttt_brake_ratio / downhill_damper;
 		}
 	}
 	torquetilt_target = torquetilt_target * 0.95 + 0.05 * new_ttt;
 	torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
 	torquetilt_target = fmaxf(torquetilt_target, -balance_conf.torquetilt_angle_limit);
-
-	/* Integral windup is a thing of the past...
-	// Deal with integral windup
-	int sign_erpm = SIGN(erpm);
-	if (SIGN(integral) != sign_erpm) { // integral windup after braking
-		if ((torquetilt_target >= 0) && (pid_value > 10)) {
-			// we are back to 0 ttt, current is small, yet integral windup is high:
-			// resort to brute force integral windup mitigation, shed a tiny fraction each cycle:
-			// at any speeds
-			if (torquetilt_interpolated < 0)
-				torquetilt_interpolated *= 0.98;
-			if (fabsf(integral) > 2000) {
-				integral *= shedfactor;
-				beep_on(1);
-			}
-			else {
-				beep_off(0);
-			}
-		}
-	}
-	else {
-		// integral windup after acceleration
-		// we usually don't want to mess with integral windup after accelerating - that's what
-		// helps give the onewheel its soft brake feel!
-		// there's a few exceptions though:
-		// a) when slowly crossing an obstacle windup will become extremely high while speed is very low
-		// b) when going up a hill instantly followed by a steep decline - integral windup
-		//    will cause a delayed braking response, resulting in a taildrag
-
-		if (torquetilt_target == 0) {
-			// This here is for (a) - once pitch crosses to zero at low erpms this should be safe to do!
-			if ((SIGN(pitch_angle) == sign_erpm) && (fabsf(erpm) < 1000)) {
-				// we are back to 0 ttt, current is small, yet integral windup is high:
-				// resort to brute force integral windup mitigation, shed 1% each cycle:
-				// but only at low speeds (below 4mph)
-				if (fabsf(integral) > 2000) {
-					integral *= 0.998;
-					beep_on(1);
-				}
-				else {
-					beep_off(0);
-				}
-				torquetilt_interpolated *= 0.99;//shedfactor;
-			}
-			// This here is for (b)
-			// ???
-		}
-		}*/
 
 	float step_size;
 	// Key to keeping the board level and consistent is to determine the appropriate step size!
@@ -1077,6 +1053,17 @@ static void apply_torquetilt(void){
 		// at low speed we can't trust the acceleration data too much => go easy
 		step_size = torquetilt_off_step_size;
 		sss = 0;
+	}
+	else if (cutback_response) {
+		// For now cutbacks trump all other situations, always react quickly!
+		if (!braking) {
+			step_size = torquetilt_on_step_size / 2;
+			sss = 28;
+		}
+		else {
+			step_size = torquetilt_on_step_size;
+			sss = 18;
+		}
 	}
 	else if (erpm > 0) {
 		if (torquetilt_interpolated < 0) {
@@ -1119,7 +1106,7 @@ static void apply_torquetilt(void){
 				if ((abs_erpm < 1000) && (pitch_angle < 0.5)) {
 					// the rider is already pushing in the other direction, obstacle cleared?
 					step_size = torquetilt_off_step_size;// / 2;
-					sss = 3;
+					sss = 29;
 				}
 				else if ((abs_erpm < 2000) && ((torquetilt_interpolated - torquetilt_target) > 2)) {
 					// we're pretty slow after braking with lots of remaining TT
@@ -1226,10 +1213,27 @@ static void apply_torquetilt(void){
 
 static void apply_turntilt(void){
 	// Apply cutzone
-	if((abs_yaw_change * 100 < balance_conf.turntilt_start_angle) || (state != RUNNING)) {
+	float abs_yaw_scaled = abs_yaw_change * 100;
+	if((abs_yaw_scaled < balance_conf.turntilt_start_angle) || (state != RUNNING)) {
 		turntilt_target = 0;
 	}
 	else {
+		if (cutback_enable) {
+			bool banked_turn = (SIGN(yaw_change) == SIGN(roll_angle));
+			if (banked_turn &&
+				(fabsf(roll_aggregate) > roll_aggregate_threshold) &&
+				(abs_yaw_scaled > 5) &&
+				((yaw_change * 100 / roll_angle) < 1)) {
+				// board is leaning in the direction it's turning (true in most turns)
+				// AND roll angle is greater than yaw_change
+				// AND aggregate roll is large (at least half a second or so of significant roll)
+				cutback = true;
+			}
+			else {
+				cutback = false;
+			}
+		}
+
 		// Calculate desired angle
 		turntilt_target = abs_yaw_change * balance_conf.turntilt_strength;
 		//turntilt_target = abs_roll_angle_sin * balance_conf.turntilt_strength;
@@ -1271,14 +1275,23 @@ static void apply_turntilt(void){
 			atr_max = 4;
 		}
 		if (fabsf(torquetilt_target) > atr_min) {
-			// Start scaling turntilt when ATR>2, down to 0 turntilt for ATR > 5 degrees
-			float atr_scaling = (atr_max - fabsf(torquetilt_target)) / (atr_max-atr_min);
-			if (atr_scaling < 0) {
-				atr_scaling = 0;
-				// during heavy torque response clear the yaw aggregate too
-				yaw_aggregate = 0;
+			if (cutback) {
+				turntilt_target = -turntilt_target;
 			}
-			turntilt_target *= atr_scaling;
+			else {
+				// Start scaling turntilt when ATR>2, down to 0 turntilt for ATR > 5 degrees
+				float atr_scaling = (atr_max - fabsf(torquetilt_target)) / (atr_max-atr_min);
+				if (atr_scaling < 0) {
+					atr_scaling = 0;
+					// during heavy torque response clear the yaw aggregate too
+					yaw_aggregate = 0;
+				}
+				turntilt_target *= atr_scaling;
+			}
+		} else {
+			if (cutback) {
+				turntilt_target = 0;
+			}
 		}
 		if (fabsf(pitch_angle - noseangling_interpolated) > 4) {
 			// no setpoint changes during heavy acceleration or braking
@@ -1349,7 +1362,7 @@ static THD_FUNCTION(balance_thread, arg) {
 		pitch_angle = RAD2DEG_f(imu_get_pitch());
 		roll_angle = RAD2DEG_f(imu_get_roll());
 		abs_roll_angle = fabsf(roll_angle);
-		abs_roll_angle_sin = sinf(DEG2RAD_f(abs_roll_angle));
+		//abs_roll_angle_sin = sinf(DEG2RAD_f(abs_roll_angle));
 		imu_get_gyro(gyro);
 		duty_cycle = mc_interface_get_duty_cycle_now();
 		abs_duty_cycle = fabsf(duty_cycle);
@@ -1359,20 +1372,34 @@ static THD_FUNCTION(balance_thread, arg) {
 		// Turn tilt:
 		yaw_angle = imu_get_yaw() * 180.0f / M_PI;
 		float new_change = yaw_angle - last_yaw_angle;
+		bool unchanged = false;
+		if ((new_change == 0) // Exact 0's only happen when the IMU is not updating between loops
+			|| (fabsf(new_change) > 100)) // yaw flips signs at 180, ignore those changes
+		{
+			new_change = last_yaw_change;
+			unchanged = true;
+		}
+		last_yaw_change = new_change;
 		last_yaw_angle = yaw_angle;
-		if (fabsf(new_change) > 100)				// yaw flips signs at 180, ignore those changes
-			new_change = yaw_change * 0.95;
+
 		// To avoid overreactions at low speed, limit change here:
-		new_change = fminf(new_change, 0.12);
-		new_change = fmaxf(new_change, -0.12);
-		yaw_change = yaw_change * 0.95 + 0.05 * (new_change);
+		new_change = fminf(new_change, 0.10);
+		new_change = fmaxf(new_change, -0.10);
+		yaw_change = yaw_change * 0.8 + 0.2 * (new_change);
 		// Clear the aggregate yaw whenever we change direction
 		if (SIGN(yaw_change) != SIGN(yaw_aggregate))
 			yaw_aggregate = 0;
 		abs_yaw_change = fabsf(yaw_change);
-		if (abs_yaw_change > 0.03)				// don't count tiny yaw changes towards aggregate
+		if ((abs_yaw_change > 0.04) && !unchanged)	// don't count tiny yaw changes towards aggregate
 			yaw_aggregate += yaw_change;
 
+		// Cutbacks:
+		if (abs_roll_angle > 8) {
+			roll_aggregate += roll_angle;
+		} else {
+			roll_aggregate = 0;
+		}
+		
 		float smooth_erpm = erpm_sign * mcpwm_foc_get_smooth_erpm();
 		acceleration_raw = smooth_erpm - last_erpm;
 		//acceleration = biquad_process(&accel_biquad, acceleration_raw);
@@ -1438,6 +1465,8 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
 			case (RUNNING_TILTBACK_LOW_VOLTAGE):
 				log_balance_state = state + (setpointAdjustmentType << 4);
+				if (cutback)
+					log_balance_state += 128;
 
 				inactivity_timer = -1;
 				lock_state = -1;
