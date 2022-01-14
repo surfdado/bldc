@@ -1742,12 +1742,15 @@ static void check_lock() {
 	case 8:
 		lock_state = -1;
 		is_locked = !is_locked;				// change lock from locked to non-locked or back
-		commands_balance_lock(is_locked);	// store to flash (in balance_conf.multi_esc)
-		if (is_locked) {
-			beep_alert(2, 1);	// beeeep-beeeep
-		}
-		else {
-			beep_alert(3, 0);	// beep-beep-beep
+		if (!is_locked || (app_get_configuration()->app_nrf_conf.channel == 99)) {
+			// Only lock if nrf channel is set to '99'
+			commands_balance_lock(is_locked);	// store to flash (in balance_conf.multi_esc)
+			if (is_locked) {
+				beep_alert(2, 1);	// beeeep-beeeep
+			}
+			else {
+				beep_alert(3, 0);	// beep-beep-beep
+			}
 		}
 		break;
 	default:;
