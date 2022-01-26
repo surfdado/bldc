@@ -103,6 +103,7 @@ static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_siz
 static float tiltback_variable, tiltback_variable_max_erpm;
 static float tt_pid_intensity, tt_strength_uphill, tt_strength_downhill, integral_tt_impact_uphill, integral_tt_impact_downhill;
 static bool allow_high_speed_full_switch_faults;
+static bool current_limiting;
 static float mc_current_max, mc_current_min;
 static float mc_max_temp_fet;
 
@@ -572,6 +573,7 @@ static void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	brake_timeout = 0;
+	current_limiting = false;
 
 	// ATR:
 	biquad_reset(&accel_biquad);
@@ -1662,12 +1664,15 @@ static THD_FUNCTION(balance_thread, arg) {
 				if (pid_value > mc_current_max) {
 					pid_value = mc_current_max - 3;
 					beep_on(1);
+					current_limiting = true;
 				}
 				else if (pid_value < mc_current_min) {
 					pid_value = mc_current_min + 3;
 					beep_on(1);
+					current_limiting = true;
 				}
-				else {
+				else if (current_limiting) {
+					current_limiting = false;
 					beep_off(0);
 				}
 
