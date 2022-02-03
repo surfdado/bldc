@@ -20,23 +20,41 @@
 #ifndef HW_Little_FOCer_H_
 #define HW_Little_FOCer_H_
 
-#include "drv8323s.h"
-
+#ifdef LFOC_IS_V3
+#define HW_NAME                 "Little_FOCer_V3"
+#else
 #define HW_NAME                 "Little_FOCer"
+#endif
 
 // HW properties
+#if !defined(LFOC_IS_V3)
 #define HW_HAS_DRV8323S
+#endif
 #define HW_HAS_3_SHUNTS
 
+#ifdef LFOC_IS_V3
+#define HW_HAS_PHASE_FILTERS
+#define PHASE_FILTER_GPIO       GPIOC
+#define PHASE_FILTER_PIN        13
+#define PHASE_FILTER_ON()       palSetPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
+#define PHASE_FILTER_OFF()      palClearPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
+
+#define HW_DEAD_TIME_NSEC       660.0 //can be as low as 150. Testing required.
+#endif
+
+#ifdef HW_HAS_DRV8323S
 #define DRV8323S_CUSTOM_SETTINGS(); drv8323s_set_current_amp_gain(CURRENT_AMP_GAIN); \
-                                    drv8323s_write_reg(3,0x333); \
-                                    drv8323s_write_reg(4,0x733);
+                                    drv8323s_write_reg(3,0x344); \
+                                    drv8323s_write_reg(4,0x744);
+#endif
 
 // Macros
+#if !defined(LFOC_IS_V3)
 #define ENABLE_GATE()           palSetPad(GPIOB, 5)
 #define DISABLE_GATE()          palClearPad(GPIOB, 5)
 
 #define IS_DRV_FAULT()          (!palReadPad(GPIOB, 7))
+#endif
 
 #define LED_GREEN_ON()          palSetPad(GPIOB, 0)
 #define LED_GREEN_OFF()         palClearPad(GPIOB, 0)
@@ -98,7 +116,11 @@
 #define CURRENT_AMP_GAIN        20.0
 #endif
 #ifndef CURRENT_SHUNT_RES
+#ifdef LFOC_IS_V3
+#define CURRENT_SHUNT_RES       0.0002
+#else
 #define CURRENT_SHUNT_RES       0.0005
+#endif
 #endif
 
 // Input voltage
@@ -202,6 +224,7 @@
 #define HW_SPI_PORT_MISO        GPIOA
 #define HW_SPI_PIN_MISO         6
 
+#ifdef HW_HAS_DRV8323S
 // SPI for DRV8323S
 
 //#define DRV8323S_MOSI_GPIO       GPIOC
@@ -223,6 +246,7 @@
 #define DRV8323S_SCK_PIN         13
 #define DRV8323S_CS_GPIO         GPIOC
 #define DRV8323S_CS_PIN          9
+#endif
 
 // BMI160
 #define BMI160_SDA_GPIO         GPIOB
@@ -256,7 +280,11 @@
 #define MCCONF_L_MAX_VOLTAGE            95.0    // Maximum input voltage
 #endif
 #ifndef MCCONF_L_CURRENT_MAX
+#ifdef LFOC_IS_V3
+#define MCCONF_L_CURRENT_MAX                100.0    // Current limit in Amperes (Upper)
+#else
 #define MCCONF_L_CURRENT_MAX                70.0    // Current limit in Amperes (Upper)
+#endif
 #endif
 #ifndef MCCONF_L_CURRENT_MIN
 #define MCCONF_L_CURRENT_MIN                -50.0   // Current limit in Amperes (Lower)
@@ -268,10 +296,11 @@
 #define MCCONF_L_IN_CURRENT_MIN             -60.0   // Input current limit in Amperes (Lower)
 #endif
 #ifndef MCCONF_L_MAX_ABS_CURRENT
+#ifdef LFOC_IS_V3
+#define MCCONF_L_MAX_ABS_CURRENT            300.0   // The maximum absolute current above which a fault is generated
+#else
 #define MCCONF_L_MAX_ABS_CURRENT            130.0   // The maximum absolute current above which a fault is generated
 #endif
-#ifndef MCCONF_M_DRV8301_OC_ADJ
-#define MCCONF_M_DRV8301_OC_ADJ             25 // DRV8301 over current protection threshold
 #endif
 #ifndef MCCONF_L_LIM_TEMP_FET_START
 #define MCCONF_L_LIM_TEMP_FET_START     70.0    // MOSFET temperature where current limiting should begin
@@ -287,9 +316,15 @@
 #endif
 
 // Setting limits
+#ifdef LFOC_IS_V3
+#define HW_LIM_CURRENT          -250.0, 250.0
+#define HW_LIM_CURRENT_IN       -100.0, 100.0
+#define HW_LIM_CURRENT_ABS      0.0, 350.0
+#else
 #define HW_LIM_CURRENT          -150.0, 150.0
-#define HW_LIM_CURRENT_IN       -150.0, 150.0
+#define HW_LIM_CURRENT_IN       -100.0, 100.0
 #define HW_LIM_CURRENT_ABS      0.0, 175.0
+#endif
 #define HW_LIM_VIN              18.0, 95.0
 #define HW_LIM_ERPM             -200e3, 200e3
 #define HW_LIM_DUTY_MIN         0.0, 0.1

@@ -170,6 +170,7 @@
 //#define HW_SOURCE "hw_es19.c"
 //#define HW_HEADER "hw_es19.h"
 
+//#define LFOC_IS_V3
 //#define HW_SOURCE "hw_Little_FOCer.c"
 //#define HW_HEADER "hw_Little_FOCer.h"
 
