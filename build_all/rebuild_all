@@ -571,6 +571,26 @@ make -j12 build_args='-DDISABLE_HW_LIMITS -DHW_SOURCE=\"hw_Little_FOCer.c\" -DHW
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default_no_hw_limits.bin
 
+#################### Little_FOCer_V3 ########################
+
+COPYDIR=Little_FOCer_V3
+mkdir -p $COPYDIR
+rm -f $COPYDIR/*
+
+# default
+cd $FWPATH
+touch conf_general.h
+make -j12 build_args='-DHW_SOURCE=\"hw_Little_FOCer.c\" -DHW_HEADER=\"hw_Little_FOCer.h\" -DLFOC_IS_V3' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
+
+# default with HW limits disabled
+cd $FWPATH
+touch conf_general.h
+make -j12 build_args='-DDISABLE_HW_LIMITS -DHW_SOURCE=\"hw_Little_FOCer.c\" -DHW_HEADER=\"hw_Little_FOCer.h\" -DLFOC_IS_V3' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default_no_hw_limits.bin
+
 #################### HW UAVC_OMEGA ########################
 
 COPYDIR=UXV_SR
