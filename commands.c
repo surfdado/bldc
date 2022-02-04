@@ -575,11 +575,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_SET_APPCONF: {
-		if (app_is_running()){
-			// Balance app is running - reject this attempt!
-			beep_alert(3, true);	// issue 3 long beeps
-			break;
-		}
 #ifndef	HW_APPCONF_READ_ONLY
 		app_configuration *appconf = mempools_alloc_appconf();
 		*appconf = *app_get_configuration();
@@ -591,7 +586,21 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				appconf->controller_id = app_get_configuration()->controller_id;
 			}
 #endif
-
+			// For some users the balance app can't be stopped due to bad fault configs, give them a way to force write:
+			bool force_write = (appconf->timeout_msec == 99);
+			if (force_write) {
+				// Don't actually set timeout to 99ms
+				appconf->timeout_msec = app_get_configuration()->timeout_msec;
+				// For riders with a beeper give them a 1 second warning in case they are riding after all
+				beep_on(1);
+				chThdSleepMilliseconds(1000);
+				beep_off(1);
+			}
+			else if (app_is_running()) {
+				// Balance app is running - reject this attempt!
+				beep_alert(3, true);	// issue 3 long beeps
+				break;
+			}
 			conf_general_store_app_configuration(appconf);
 			app_set_configuration(appconf);
 			timeout_configure(appconf->timeout_msec, appconf->timeout_brake_current, appconf->kill_sw_mode);
