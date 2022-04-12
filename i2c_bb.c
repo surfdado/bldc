@@ -30,6 +30,8 @@
 #define READ_SDA()				palReadPad(s->sda_gpio, s->sda_pin)
 #define READ_SCL()				palReadPad(s->scl_gpio, s->scl_pin)
 
+#define USE_FAST_I2C // If defined use 400khz i2c, otherwise 100khz
+
 // Private functions
 static void i2c_start_cond(i2c_bb_state *s);
 static void i2c_stop_cond(i2c_bb_state *s);
@@ -263,5 +265,9 @@ static bool clock_stretch_timeout(i2c_bb_state *s) {
 }
 
 static void i2c_delay(void) {
-	timer_sleep(1e-6);
+	#ifdef USE_FAST_I2C
+		timer_sleep(2.5e-7);
+	#else
+		timer_sleep(1e-6);
+	#endif
 }
