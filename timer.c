@@ -44,6 +44,10 @@ uint32_t timer_time_now(void) {
 	return TIM5->CNT;
 }
 
+// Don't run this function in a tight loop. 
+// Integer division is 2-12 cycles, floating point division is 14 cycles.
+// Floating point division takes 14 cycles on arm_cortex M4 FPU unit, 
+// ~ 84ns per a floating point division.
 float timer_seconds_elapsed_since(uint32_t time) {
 	uint32_t diff = TIM5->CNT - time;
 	return (float)diff / (float)TIMER_HZ;
@@ -56,10 +60,10 @@ float timer_seconds_elapsed_since(uint32_t time) {
  * Seconds to sleep.
  */
 void timer_sleep(float seconds) {
-	uint32_t start_t = TIM5->CNT;
-
+	uint32_t start_timestamp = TIM5->CNT;
+	uint32_t wait_ticks = seconds * TIMER_HZ;
 	for (;;) {
-		if (timer_seconds_elapsed_since(start_t) >= seconds) {
+		if (TIM5->CNT - start_timestamp > wait_ticks) {
 			return;
 		}
 	}
