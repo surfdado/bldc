@@ -122,6 +122,7 @@ static float d_pt1_lowpass_state, d_pt1_lowpass_k, d_pt1_highpass_state, d_pt1_h
 static Biquad d_biquad_lowpass, d_biquad_highpass;
 static float motor_timeout;
 static systime_t brake_timeout;
+static bool is_dual_switch;
 
 // Debug values
 static int debug_render_1, debug_render_2;
@@ -211,6 +212,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		float Fc = balance_conf.torquetilt_filter / balance_conf.hertz;
 		biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 	}
+
+	// Both switches act as one if erpm is 0
+	is_dual_switch = (balance_conf.fault_adc_half_erpm == 0);
 
 	// Variable nose angle adjustment / tiltback (setting is per 1000erpm, convert to per erpm)
 	tiltback_variable = balance_conf.tiltback_variable / 1000;
@@ -355,13 +359,15 @@ static bool check_faults(bool ignoreTimers){
 	}
 
 	// Switch partially open and stopped
-	if((switch_state == HALF || switch_state == OFF) && abs_erpm < balance_conf.fault_adc_half_erpm){
-		if(ST2MS(current_time - fault_switch_half_timer) > balance_conf.fault_delay_switch_half || ignoreTimers){
-			state = FAULT_SWITCH_HALF;
-			return true;
+	if (!is_dual_switch) {
+		if((switch_state == HALF || switch_state == OFF) && abs_erpm < balance_conf.fault_adc_half_erpm){
+			if(ST2MS(current_time - fault_switch_half_timer) > balance_conf.fault_delay_switch_half || ignoreTimers){
+				state = FAULT_SWITCH_HALF;
+				return true;
+			}
+		} else {
+			fault_switch_half_timer = current_time;
 		}
-	} else {
-		fault_switch_half_timer = current_time;
 	}
 
 	// Check pitch angle
@@ -671,7 +677,10 @@ static THD_FUNCTION(balance_thread, arg) {
 			if(adc1 > balance_conf.fault_adc1 && adc2 > balance_conf.fault_adc2){
 				switch_state = ON;
 			}else if(adc1 > balance_conf.fault_adc1 || adc2 > balance_conf.fault_adc2){
-				switch_state = HALF;
+				if (is_dual_switch)
+					switch_state = ON;
+				else
+					switch_state = HALF;
 			}else{
 				switch_state = OFF;
 			}
