@@ -54,6 +54,14 @@ void hw_init_gpio(void) {
             PAL_MODE_OUTPUT_PUSHPULL |
             PAL_STM32_OSPEED_HIGHEST);
 
+#ifdef LFOC_IS_V3
+	// External/Button LED
+	palSetPadMode(GPIOB, 12,
+				  PAL_MODE_OUTPUT_PUSHPULL |
+				  PAL_STM32_OSPEED_HIGHEST);
+	EXT_LED_ON();
+#endif
+
     // ENABLE_GATE
     palSetPadMode(GPIOB, 5,
             PAL_MODE_OUTPUT_PUSHPULL |

@@ -181,6 +181,12 @@
 #define HW_ICU_GPIO             GPIOB
 #define HW_ICU_PIN              6
 
+#ifdef LFOC_IS_V3
+#define HAS_EXT_LED                      1
+#define EXT_LED_ON()                   palSetPad(GPIOB, 12)
+#define EXT_LED_OFF()                  palClearPad(GPIOB, 12)
+#endif
+
 // I2C Peripheral
 #define HW_I2C_DEV              I2CD2
 #define HW_I2C_GPIO_AF          GPIO_AF_I2C2
