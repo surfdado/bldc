@@ -546,20 +546,6 @@ static void apply_turntilt(void){
 
 }
 
-static float apply_deadzone(float error){
-	if(balance_conf.deadzone == 0){
-		return error;
-	}
-
-	if(error < balance_conf.deadzone && error > -balance_conf.deadzone){
-		return 0;
-	} else if(error > balance_conf.deadzone){
-		return error - balance_conf.deadzone;
-	} else {
-		return error + balance_conf.deadzone;
-	}
-}
-
 static void brake(void){
 	// Brake timeout logic
 	if(balance_conf.brake_timeout > 0 && (abs_erpm > 1 || brake_timeout == 0)){
@@ -717,8 +703,6 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Do PID maths
 				proportional = setpoint - pitch_angle;
-				// Apply deadzone
-				proportional = apply_deadzone(proportional);
 				// Resume real PID maths
 				integral = integral + proportional;
 				derivative = last_pitch_angle - pitch_angle;
@@ -739,7 +723,14 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = biquad_process(&d_biquad_highpass, derivative);
 				}
 
-				pid_value = (balance_conf.kp * proportional) + (balance_conf.ki * integral) + (balance_conf.kd * derivative);
+				float pid_integral = (balance_conf.ki * integral);
+				// Integral limiting using biquad highpass:
+				if(balance_conf.deadzone > 0){
+					pid_integral = fminf(balance_conf.deadzone * 10, fabsf(pid_integral));
+					pid_integral *= SIGN(integral);
+				}
+
+				pid_value = (balance_conf.kp * proportional) + pid_integral + (balance_conf.kd * derivative);
 
 				last_proportional = proportional;
 
