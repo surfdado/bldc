@@ -35,7 +35,9 @@
 
 // Private variables
 static ATTITUDE_INFO m_att;
+static ATTITUDE_INFO m_att_ref;
 static FusionAhrs m_fusionAhrs;
+
 static float m_accel[3], m_gyro[3], m_mag[3];
 static stkalign_t m_thd_work_area[THD_WORKING_AREA_SIZE(2048) / sizeof(stkalign_t)];
 static i2c_bb_state m_i2c_bb;
@@ -115,6 +117,7 @@ void imu_reset_orientation(void) {
 	imu_ready = false;
 	init_time = chVTGetSystemTimeX();
 	ahrs_init_attitude_info(&m_att);
+	ahrs_init_attitude_info(&m_att_ref);
 	FusionAhrsInitialise(&m_fusionAhrs, 10.0, 1.0);
 	ahrs_update_all_parameters(1.0, 10.0, 0.0, 2.0);
 }
@@ -229,6 +232,18 @@ float imu_get_yaw(void) {
 
 void imu_get_rpy(float *rpy) {
 	ahrs_get_roll_pitch_yaw(rpy, &m_att);
+}
+
+float imu_ref_get_roll(void) {
+	return ahrs_get_roll(&m_att_ref);
+}
+
+float imu_ref_get_pitch(void) {
+	return ahrs_get_pitch(&m_att_ref);
+}
+
+float imu_ref_get_yaw(void) {
+	return ahrs_get_yaw(&m_att_ref);
 }
 
 void imu_get_accel(float *accel) {
@@ -504,6 +519,7 @@ static void imu_read_callback(float *accel, float *gyro, float *mag) {
 			m_att.q3 = m_fusionAhrs.quaternion.element.z;
 		} break;
 	}
+	ahrs_update_mahonyref_imu(gyro_rad, m_accel, dt, (ATTITUDE_INFO *)&m_att_ref);
 }
 
 void rotate(float *input, float *rotation, float *output) {

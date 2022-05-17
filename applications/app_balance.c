@@ -95,6 +95,7 @@ static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_siz
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
+static float true_pitch_angle;
 static float gyro[3];
 static float duty_cycle, abs_duty_cycle;
 static float erpm, abs_erpm, avg_erpm;
@@ -123,6 +124,17 @@ static Biquad d_biquad_lowpass, d_biquad_highpass;
 static float motor_timeout;
 static systime_t brake_timeout;
 static bool is_dual_switch;
+
+// Feature: bump compensation / IMU correction
+extern bool balance_bump_correction;
+extern float balance_bump_adjuster;
+extern float bump_correction_intensity;
+static float pitch_change_aggregate;
+static int pitch_steady_count;
+static int pitch_change_count;
+static int bump_count;
+static systime_t correction_sustain;
+static float correction_sustain_duration;
 
 // Debug values
 static int debug_render_1, debug_render_2;
@@ -215,6 +227,23 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Both switches act as one if erpm is 0
 	is_dual_switch = (balance_conf.fault_adc_half_erpm == 0);
+
+	// Bump compensation
+	bump_correction_intensity = 1.5;
+	correction_sustain_duration = 500;
+
+	if (balance_conf.yaw_current_clamp == 0.01) {
+		bump_correction_intensity = 0;
+		correction_sustain_duration = 0;
+	}
+	else {
+		if (balance_conf.yaw_current_clamp > 5)
+			bump_correction_intensity = 1.5;
+		else
+			bump_correction_intensity = balance_conf.yaw_current_clamp;
+
+		correction_sustain_duration = fmaxf(50, balance_conf.roll_steer_erpm_kp);
+	}
 
 	// Variable nose angle adjustment / tiltback (setting is per 1000erpm, convert to per erpm)
 	tiltback_variable = balance_conf.tiltback_variable / 1000;
@@ -325,6 +354,10 @@ static void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	brake_timeout = 0;
+
+	// Bump compensation
+	bump_count = 0;
+	balance_bump_correction = false;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -371,7 +404,7 @@ static bool check_faults(bool ignoreTimers){
 	}
 
 	// Check pitch angle
-	if(fabsf(pitch_angle) > balance_conf.fault_pitch){
+	if(fabsf(true_pitch_angle) > balance_conf.fault_pitch){
 		if(ST2MS(current_time - fault_angle_pitch_timer) > balance_conf.fault_delay_pitch || ignoreTimers){
 			state = FAULT_ANGLE_PITCH;
 			return true;
@@ -617,12 +650,103 @@ static THD_FUNCTION(balance_thread, arg) {
 		motor_position = mc_interface_get_pid_pos_now();
 
 		// Get the values we want
+		true_pitch_angle = RAD2DEG_f(imu_ref_get_pitch());
 		last_pitch_angle = pitch_angle;
 		pitch_angle = RAD2DEG_f(imu_get_pitch());
 		roll_angle = RAD2DEG_f(imu_get_roll());
 		abs_roll_angle = fabsf(roll_angle);
 		abs_roll_angle_sin = sinf(DEG2RAD_f(abs_roll_angle));
 		imu_get_gyro(gyro);
+
+		float pitch_change = pitch_angle - last_pitch_angle;
+		float pitch_change_abs = fabsf(pitch_change);
+		float correction_sustain_scaling = 1.0;
+		if (pitch_change_abs > 0.04) {
+			if (pitch_change_aggregate == 0) {
+				pitch_change_aggregate = pitch_change;
+				pitch_change_count = 1;
+			}
+			else if (SIGN(pitch_change_aggregate) == SIGN(pitch_change)) {
+				pitch_change_count++;
+				pitch_change_aggregate += pitch_change;
+			}
+			else {
+				if (pitch_change_count > 4) {
+					if (pitch_change_aggregate > 1.0) {
+						correction_sustain_scaling = 1.3;
+					}
+					else if (pitch_change_aggregate < 0.4) {
+						correction_sustain_scaling = 0.7;
+					}
+					// change has reversed sign, it's considered a bump if the change was severe enough
+					if ((fabsf(pitch_change_aggregate) > 0.2) && (pitch_change_count < 20)) {
+						if (fabsf(pitch_change_aggregate) > 0.8) {
+							// harsh bumps:
+							if (ST2MS(current_time - correction_sustain) < correction_sustain_duration) {
+								// harsh bumps count double if we've already been correcting
+								bump_count += 2;
+							}
+							else {
+								// first harsh bump (e.g. bonk) gets discounted
+								bump_count += 1;
+							}
+						}
+						else {
+							// moderate bumps:
+							bump_count++;
+						}
+					}
+					else if ((fabsf(pitch_change_aggregate) > 0.8) && (pitch_change_count < 30)) {
+						// bigger but slower bump (may not be rider action?)
+						bump_count += 1;
+					}
+				}
+				pitch_change_aggregate = pitch_change;
+				pitch_change_count = 1;
+			}
+			pitch_steady_count = 0;
+		}
+		else {
+			pitch_steady_count++;
+			if (pitch_steady_count > 15) {
+				pitch_change_count = 0;
+				pitch_change_aggregate = 0;
+				if (pitch_steady_count > 30) {
+					bump_count = 0;
+					pitch_steady_count = 30;
+				}
+				else {
+					if (bump_count > 1) {
+						bump_count = bump_count >> 1;	// Divide by 2
+					}
+				}
+			}
+		}
+
+		// pitch error is in radians, not degrees!
+		float pitch_error = imu_ref_get_pitch() - imu_get_pitch();
+		if (bump_count > 1) {
+			balance_bump_correction = true;
+			float boost = 1 + 0.1 * fminf(5, bump_count);
+			balance_bump_adjuster = pitch_error * bump_correction_intensity * boost;
+		}
+		else {
+			if (balance_bump_correction && (bump_count > 0)) {
+				// keep correcting but by half the amount
+				balance_bump_adjuster = pitch_error * bump_correction_intensity;
+				correction_sustain = current_time;
+			}
+			else {
+				if (ST2MS(current_time - correction_sustain) < correction_sustain_duration * correction_sustain_scaling) {
+					balance_bump_adjuster = pitch_error * bump_correction_intensity * 0.8;
+				}
+				else {
+					balance_bump_correction = false;
+					balance_bump_adjuster = 0;
+				}
+			}
+		}
+
 		duty_cycle = mc_interface_get_duty_cycle_now();
 		abs_duty_cycle = fabsf(duty_cycle);
 		erpm = mc_interface_get_rpm();
@@ -671,7 +795,6 @@ static THD_FUNCTION(balance_thread, arg) {
 				switch_state = OFF;
 			}
 		}
-
 
 		// Control Loop State Logic
 		switch(state){
