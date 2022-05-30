@@ -204,7 +204,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	}
 	if(balance_conf.kd_pt1_lowpass_frequency > 0){
 		float dT = 1.0 / balance_conf.hertz;
-		float RC = 1.0 / ( 2.0 * M_PI * balance_conf.kd_pt1_lowpass_frequency);
+		float RC = 1.0 / ( 2.0 * M_PI * balance_conf.kd_pt1_lowpass_frequency / 10);
 		d_pt1_lowpass_k =  dT / (RC + dT);
 	}
 	if(balance_conf.kd_pt1_highpass_frequency > 0){
