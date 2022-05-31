@@ -867,6 +867,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				if(balance_conf.deadzone > 0){
 					pid_integral = fminf(balance_conf.deadzone * 10, fabsf(pid_integral));
 					pid_integral *= SIGN(integral);
+					integral = pid_integral / balance_conf.ki;
 				}
 
 				pid_value = (balance_conf.kp * proportional) + pid_integral + (balance_conf.kd * derivative);
