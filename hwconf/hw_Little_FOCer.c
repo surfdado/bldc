@@ -54,13 +54,11 @@ void hw_init_gpio(void) {
             PAL_MODE_OUTPUT_PUSHPULL |
             PAL_STM32_OSPEED_HIGHEST);
 
-#ifdef LFOC_IS_V3
-	// External/Button LED
-	palSetPadMode(GPIOB, 12,
-				  PAL_MODE_OUTPUT_PUSHPULL |
-				  PAL_STM32_OSPEED_HIGHEST);
-	EXT_LED_ON();
-#endif
+	// External Buzzer (using servo pin!)
+	palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN,
+			PAL_MODE_OUTPUT_PUSHPULL |
+			PAL_STM32_OSPEED_HIGHEST);
+	EXT_BUZZER_OFF();
 
     // ENABLE_GATE
     palSetPadMode(GPIOB, 5,
@@ -258,3 +256,12 @@ void hw_try_restore_i2c(void) {
         i2cReleaseBus(&HW_I2C_DEV);
     }
 }
+
+#ifdef LFOC_IS_V3
+void button_led_init(void) {
+	// External/Button LED
+	palSetPadMode(BUTTON_LED_1_GPIO,BUTTON_LED_1_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	LED_PWM1_ON();
+	return;
+}
+#endif

@@ -61,6 +61,15 @@
 #define LED_RED_ON()            palSetPad(GPIOB, 1)
 #define LED_RED_OFF()           palClearPad(GPIOB, 1)
 
+#ifdef LFOC_IS_V3
+#define BUTTON_LED_1_GPIO GPIOB
+#define BUTTON_LED_1_PIN  12
+#define LED_PWM1_ON()			palSetPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
+#define LED_PWM1_OFF()			palClearPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
+
+#define HW_EARLY_INIT()			button_led_init();
+#endif
+
 /*
  * ADC Vector
  *
@@ -181,11 +190,10 @@
 #define HW_ICU_GPIO             GPIOB
 #define HW_ICU_PIN              6
 
-#ifdef LFOC_IS_V3
-#define HAS_EXT_LED                      1
-#define EXT_LED_ON()                   palSetPad(GPIOB, 12)
-#define EXT_LED_OFF()                  palClearPad(GPIOB, 12)
-#endif
+// LittleFOCer uses servo pin for buzzer
+#define HAS_EXT_BUZZER			1
+#define EXT_BUZZER_ON()			palSetPad(HW_ICU_GPIO, HW_ICU_PIN)
+#define EXT_BUZZER_OFF()		palClearPad(HW_ICU_GPIO, HW_ICU_PIN)
 
 // I2C Peripheral
 #define HW_I2C_DEV              I2CD2
@@ -331,5 +339,8 @@
 #define HW_LIM_DUTY_MIN         0.0, 0.1
 #define HW_LIM_DUTY_MAX         0.0, 0.99
 #define HW_LIM_TEMP_FET         -40.0, 110.0
+
+// Functions
+void button_led_init(void);
 
 #endif /* HW_Little_FOCer_H_ */
