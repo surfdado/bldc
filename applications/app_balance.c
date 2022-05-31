@@ -31,7 +31,7 @@
 #include "datatypes.h"
 #include "comm_can.h"
 #include "terminal.h"
-
+#include "buzzer.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -123,6 +123,7 @@ static float d_pt1_lowpass_state, d_pt1_lowpass_k, d_pt1_highpass_state, d_pt1_h
 static Biquad d_biquad_lowpass, d_biquad_highpass;
 static float motor_timeout;
 static systime_t brake_timeout;
+static float switch_warn_buzz_erpm;
 static bool is_dual_switch;
 
 // Feature: bump compensation / IMU correction
@@ -135,6 +136,7 @@ static int pitch_change_count;
 static int bump_count;
 static systime_t correction_sustain;
 static float correction_sustain_duration;
+static bool balance_bump_beep;
 
 // Debug values
 static int debug_render_1, debug_render_2;
@@ -228,6 +230,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Both switches act as one if erpm is 0
 	is_dual_switch = (balance_conf.fault_adc_half_erpm == 0);
 
+	// Speed at which to warn users about an impending full switch fault
+	switch_warn_buzz_erpm = 2000;
+
 	// Bump compensation
 	bump_correction_intensity = 1.5;
 	correction_sustain_duration = 500;
@@ -243,6 +248,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 			bump_correction_intensity = balance_conf.yaw_current_clamp;
 
 		correction_sustain_duration = fmaxf(50, balance_conf.roll_steer_erpm_kp);
+		balance_bump_beep = (balance_conf.roll_steer_kp == 0);
 	}
 
 	// Variable nose angle adjustment / tiltback (setting is per 1000erpm, convert to per erpm)
@@ -735,6 +741,8 @@ static THD_FUNCTION(balance_thread, arg) {
 			balance_bump_correction = true;
 			float boost = 1 + 0.1 * fminf(5, bump_count);
 			balance_bump_adjuster = pitch_error * bump_correction_intensity * boost;
+			if (balance_bump_beep)
+				beep_alert(1, false);
 		}
 		else {
 			if (balance_bump_correction && (bump_count > 0)) {
@@ -747,6 +755,10 @@ static THD_FUNCTION(balance_thread, arg) {
 					balance_bump_adjuster = pitch_error * bump_correction_intensity * 0.8;
 				}
 				else {
+					if (balance_bump_correction) {
+						if (balance_bump_beep)
+							beep_off(true);
+					}
 					balance_bump_correction = false;
 					balance_bump_adjuster = 0;
 				}
@@ -801,6 +813,27 @@ static THD_FUNCTION(balance_thread, arg) {
 				switch_state = OFF;
 			}
 		}
+
+		/*
+		 * Use external buzzer to notify rider of foot switch faults.
+		 */
+#ifdef HAS_EXT_BUZZER
+		if (switch_state == OFF) {
+			if (abs_erpm > switch_warn_buzz_erpm) {
+				// If we're at riding speed and the switch is off => ALERT the user
+				// set force=true since this could indicate an imminent shutdown/nosedive
+				beep_on(true);
+			}
+			else {
+				// if we drop below riding speed stop buzzing
+				beep_off(false);
+			}
+		}
+		else {
+			// if the switch comes back on we stop buzzing
+			beep_off(false);
+		}
+#endif
 
 		// Control Loop State Logic
 		switch(state){
@@ -935,6 +968,8 @@ static THD_FUNCTION(balance_thread, arg) {
 				brake();
 				break;
 		}
+
+		update_beep_alert();
 
 		// Debug outputs
 		app_balance_sample_debug();
