@@ -895,12 +895,15 @@ static THD_FUNCTION(balance_thread, arg) {
 					derivative = biquad_process(&d_biquad_highpass, derivative);
 				}
 
-				float pid_integral = (balance_conf.ki * integral);
-				// Integral limiting using biquad highpass:
-				if(balance_conf.deadzone > 0){
-					pid_integral = fminf(balance_conf.deadzone * 10, fabsf(pid_integral));
-					pid_integral *= SIGN(integral);
-					integral = pid_integral / balance_conf.ki;
+				float pid_integral = 0;
+				if (balance_conf.ki > 0) {
+					pid_integral = balance_conf.ki * integral;
+					// Integral limiting using biquad highpass:
+					if(balance_conf.deadzone > 0){
+						pid_integral = fminf(balance_conf.deadzone * 10, fabsf(pid_integral));
+						pid_integral *= SIGN(integral);
+						integral = pid_integral / balance_conf.ki;
+					}
 				}
 
 				pid_value = (balance_conf.kp * proportional) + pid_integral + (balance_conf.kd * derivative);
