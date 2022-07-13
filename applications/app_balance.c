@@ -92,6 +92,7 @@ static float startup_step_size;
 static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_size, tiltback_return_step_size;
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
+static float angular_rate_kp;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -231,6 +232,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Speed at which to warn users about an impending full switch fault
 	switch_warn_buzz_erpm = 2000;
+
+	// Angular Rate adder to PID:
+	angular_rate_kp = balance_conf.yaw_kp;
+	if (angular_rate_kp >= 1)
+		angular_rate_kp = 0;
 
 	// Bump compensation
 	bump_correction_intensity = 1.5;
@@ -880,6 +886,11 @@ static THD_FUNCTION(balance_thread, arg) {
 					}else{
 						pid_value += balance_conf.booster_current * SIGN(proportional);
 					}
+				}
+
+				// Add angular rate to pid_value:
+				if (angular_rate_kp > 0) {
+					pid_value -= gyro[1] * angular_rate_kp;
 				}
 
 				// Output to motor
