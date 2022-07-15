@@ -36,8 +36,7 @@
 #include <math.h>
 #include <stdio.h>
 
-// Can
-#define MAX_CAN_AGE 0.1
+#define FW_REVISION 4
 
 // Data type (Value 5 was removed, and can be reused at a later date, but i wanted to preserve the current value's numbers for UIs)
 typedef enum {
@@ -93,6 +92,7 @@ static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_si
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
 static float tiltback_variable, tiltback_variable_max_erpm, noseangling_step_size;
 static float angular_rate_kp;
+static bool show_revision;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle, abs_roll_angle_sin;
@@ -267,6 +267,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Reset loop time variables
 	last_time = 0;
 	filtered_loop_overshoot = 0;
+	show_revision = true;
 }
 
 void app_balance_start(void) {
@@ -312,6 +313,9 @@ float app_balance_get_roll_angle(void) {
 	return roll_angle;
 }
 uint32_t app_balance_get_diff_time(void) {
+	if (show_revision) {
+		return FW_REVISION;
+	}
 	return ST2US(diff_time);
 }
 float app_balance_get_motor_current(void) {
@@ -903,6 +907,7 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_STARTUP):
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){
+					show_revision = false;
 					reset_vars();
 					break;
 				}
