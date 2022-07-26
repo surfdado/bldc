@@ -20,10 +20,15 @@
 #ifndef HW_Little_FOCer_H_
 #define HW_Little_FOCer_H_
 
+#ifdef LFOC_IS_V3_1
+#define HW_NAME                 "Little_FOCer_V3_1"
+#define LFOC_IS_V3
+#else
 #ifdef LFOC_IS_V3
 #define HW_NAME                 "Little_FOCer_V3"
 #else
 #define HW_NAME                 "Little_FOCer"
+#endif
 #endif
 
 // HW properties
@@ -243,12 +248,20 @@
 #define DRV8323S_CS_PIN          9
 #endif
 
+// IMU:
+#ifdef LFOC_IS_V3_1
+// LSM6DS3
+#define LSM6DS3_SDA_GPIO        GPIOB
+#define LSM6DS3_SDA_PIN         2
+#define LSM6DS3_SCL_GPIO        GPIOA
+#define LSM6DS3_SCL_PIN         15
+#else
 // BMI160
 #define BMI160_SDA_GPIO         GPIOB
 #define BMI160_SDA_PIN          2
 #define BMI160_SCL_GPIO         GPIOA
 #define BMI160_SCL_PIN          15
-//#define IMU_FLIP
+#endif
 
 // NRF SWD
 #define NRF5x_SWDIO_GPIO        GPIOB
