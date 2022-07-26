@@ -577,6 +577,19 @@ make -j12 build_args='-DHW_SOURCE=\"hw_Little_FOCer.c\" -DHW_HEADER=\"hw_Little_
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
 
+#################### Little_FOCer_V3.1 ########################
+
+COPYDIR=Little_FOCer_V3_1
+mkdir -p $COPYDIR
+rm -f $COPYDIR/*
+
+# default
+cd $FWPATH
+touch conf_general.h
+make -j12 build_args='-DHW_SOURCE=\"hw_Little_FOCer.c\" -DHW_HEADER=\"hw_Little_FOCer.h\" -DLFOC_IS_V3_1' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
+
 #################### HW UAVC_OMEGA ########################
 
 COPYDIR=UXV_SR
