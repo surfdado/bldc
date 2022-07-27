@@ -495,6 +495,7 @@ bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *c
 	conf->foc_phase_filter_enable = buffer[ind++];
 	conf->foc_phase_filter_max_erpm = buffer_get_float32_auto(buffer, &ind);
 	conf->foc_mtpa_mode = buffer[ind++];
+	conf->foc_mtpa_mode = MCCONF_FOC_MTPA_MODE;
 	conf->foc_fw_current_max = buffer_get_float32_auto(buffer, &ind);
 	conf->foc_fw_duty_start = buffer_get_float16(buffer, 10000, &ind);
 	conf->foc_fw_ramp_time = buffer_get_float16(buffer, 1000, &ind);
