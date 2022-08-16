@@ -25,7 +25,6 @@
 
 #include <stdio.h>
 
-
 static thread_t *lsm6ds3_thread_ref = NULL;
 static i2c_bb_state m_i2c_bb;
 static volatile uint16_t lsm6ds3_addr;
@@ -79,7 +78,7 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 	// Configure imu
 	// Set all accel speeds
 	txb[0] = LSM6DS3_ACC_GYRO_CTRL1_XL;
-	txb[1] = LSM6DS3_ACC_GYRO_BW_XL_400Hz | LSM6DS3_ACC_GYRO_FS_XL_16g;
+	txb[1] = LSM6DS3_ACC_GYRO_BW_XL_400Hz | LSM6DS3_ACC_GYRO_FS_XL_8g;
 	if(rate_hz <= 13){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_13Hz;
 	}else if(rate_hz <= 26){
@@ -93,7 +92,14 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 	}else if(rate_hz <= 416){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_416Hz;
 	}else if(rate_hz <= 833){
+		// default: ODR/2 with 833Hz
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_833Hz;
+		if (is_trc) {
+			#define BW0_XL 1
+            #define LPF1_BW_SEL 2
+			// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 400Hz
+			txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+		}
 	}else if(rate_hz <= 1660){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
 	}else if(rate_hz <= 3330){
@@ -109,7 +115,7 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 
 	// Set all gyro speeds
 	txb[0] = LSM6DS3_ACC_GYRO_CTRL2_G;
-	txb[1] = LSM6DS3_ACC_GYRO_FS_G_2000dps;
+	txb[1] = LSM6DS3_ACC_GYRO_FS_G_1000dps;
 	if(rate_hz <= 13){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_G_13Hz;
 	}else if(rate_hz <= 26){
@@ -137,10 +143,27 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 		return;
 	}
 
-	// Set XL anti-aliasing filter to be manually configured
 	txb[0] = LSM6DS3_ACC_GYRO_CTRL4_C;
-	txb[1] = LSM6DS3_ACC_GYRO_BW_SCAL_ODR_ENABLED;
+	if (is_trc) {
+		// Enable gyroscope digital LPF1
+		#define LPF1_SEL_G 2
+		txb[1] = LPF1_SEL_G;
+	}
+	else {
+		// Set XL anti-aliasing filter to be manually configured
+		txb[1] = LSM6DS3_ACC_GYRO_BW_SCAL_ODR_ENABLED;
+	}
 	res = i2c_bb_tx_rx(&m_i2c_bb, lsm6ds3_addr, txb, 1, rxb, 1);
+
+	if (is_trc) {
+        #define LPF2_XL_EN 0x40
+		int HPCF_XL = 0x2;
+		// For ODR/9 Low-pass path
+		txb[0] = LSM6DS3_ACC_GYRO_CTRL8_XL;
+		txb[1] = LPF2_XL_EN + (HPCF_XL << 4);
+		res = i2c_bb_tx_rx(&m_i2c_bb, lsm6ds3_addr, txb, 1, rxb, 1);
+	}
+
 	if(!res){
 		commands_printf("LSM6DS3 ODR Config FAILED");
 		return;
@@ -224,12 +247,12 @@ static THD_FUNCTION(lsm6ds3_thread, arg) {
 		bool res = i2c_bb_tx_rx(&m_i2c_bb, lsm6ds3_addr, txb, 1, rxb, 12);
 
 		// Parse 6 axis values
-		float gx = (float)((int16_t)((uint16_t)rxb[1] << 8) + rxb[0]) * 4.375 * (2000 / 125) / 1000;
-		float gy = (float)((int16_t)((uint16_t)rxb[3] << 8) + rxb[2]) * 4.375 * (2000 / 125) / 1000;
-		float gz = (float)((int16_t)((uint16_t)rxb[5] << 8) + rxb[4]) * 4.375 * (2000 / 125) / 1000;
-		float ax = (float)((int16_t)((uint16_t)rxb[7] << 8) + rxb[6]) * 0.061 * (16 >> 1) / 1000;
-		float ay = (float)((int16_t)((uint16_t)rxb[9] << 8) + rxb[8]) * 0.061 * (16 >> 1) / 1000;
-		float az = (float)((int16_t)((uint16_t)rxb[11] << 8) + rxb[10]) * 0.061 * (16 >> 1) / 1000;
+		float gx = (float)((int16_t)((uint16_t)rxb[1] << 8) + rxb[0]) * 4.375 * (1000 / 125) / 1000;
+		float gy = (float)((int16_t)((uint16_t)rxb[3] << 8) + rxb[2]) * 4.375 * (1000 / 125) / 1000;
+		float gz = (float)((int16_t)((uint16_t)rxb[5] << 8) + rxb[4]) * 4.375 * (1000 / 125) / 1000;
+		float ax = (float)((int16_t)((uint16_t)rxb[7] << 8) + rxb[6]) * 0.061 * (8 >> 1) / 1000;
+		float ay = (float)((int16_t)((uint16_t)rxb[9] << 8) + rxb[8]) * 0.061 * (8 >> 1) / 1000;
+		float az = (float)((int16_t)((uint16_t)rxb[11] << 8) + rxb[10]) * 0.061 * (8 >> 1) / 1000;
 
 		if (res && read_callback) {
 			float tmp_accel[3] = {ax,ay,az}, tmp_gyro[3] = {gx,gy,gz}, tmp_mag[3] = {1,2,3};
