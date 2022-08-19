@@ -25,6 +25,8 @@
 
 #include <stdio.h>
 
+int lsm_filter = 12;
+
 static thread_t *lsm6ds3_thread_ref = NULL;
 static i2c_bb_state m_i2c_bb;
 static volatile uint16_t lsm6ds3_addr;
@@ -97,16 +99,38 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 		if (is_trc) {
 			#define BW0_XL 1
 			#define LPF1_BW_SEL 2
-			// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 400Hz
-			txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+			// Enable low pass filter
+			if (lsm_filter & 0x1) {
+				// ODR/4 with 833Hz
+				txb[1] = LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_833Hz;
+			}
+			if (lsm_filter & 0x2) {
+				// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 1.5kHz
+				txb[1] = LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+			}
+			if (lsm_filter & 0x4) {
+				// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 400Hz
+				txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+			}
 		}
 	}else if(rate_hz <= 1660){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
 		if (is_trc) {
-			#define BW0_XL 0
+			#define BW0_XL 1
 			#define LPF1_BW_SEL 2
-			// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 1500Hz
-			txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
+			// Enable low pass filter
+			if (lsm_filter & 0x1) {
+				// ODR/4 with 833Hz
+				txb[1] = LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+			}
+			if (lsm_filter & 0x2) {
+				// ODR/4 with 3330Hz AND Accelerometer Analog Chain Bandwidth = 1.5kHz
+				txb[1] = LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
+			}
+			if (lsm_filter & 0x4) {
+				// ODR/4 with 3330Hz AND Accelerometer Analog Chain Bandwidth = 1.5kHz
+				txb[1] = LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
+			}
 		}
 	}else if(rate_hz <= 3330){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
@@ -164,10 +188,12 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 	if (is_trc) {
         #define LPF2_XL_EN 0x40
 		int HPCF_XL = 0x2;
-		// For ODR/9 Low-pass path
-		txb[0] = LSM6DS3_ACC_GYRO_CTRL8_XL;
-		txb[1] = LPF2_XL_EN + (HPCF_XL << 4);
-		res = i2c_bb_tx_rx(&m_i2c_bb, lsm6ds3_addr, txb, 1, rxb, 1);
+		if (lsm_filter & 0x8) {
+			// For ODR/9 Low-pass path
+			txb[0] = LSM6DS3_ACC_GYRO_CTRL8_XL;
+			txb[1] = LPF2_XL_EN + (HPCF_XL << 4);
+			res = i2c_bb_tx_rx(&m_i2c_bb, lsm6ds3_addr, txb, 1, rxb, 1);
+		}
 	}
 
 	if(!res){

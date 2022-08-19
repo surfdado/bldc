@@ -56,6 +56,8 @@ static int8_t user_i2c_write(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, 
 static int8_t user_spi_read(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t len);
 static int8_t user_spi_write(uint8_t dev_id, uint8_t reg_addr, uint8_t *data, uint16_t len);
 
+extern int lsm_filter;
+
 void imu_init(imu_config *set) {
 	m_settings = *set;
 
@@ -66,6 +68,9 @@ void imu_init(imu_config *set) {
 	m_icm20948_state.rate_hz = set->sample_rate_hz;
 	m_bmi_state.rate_hz = set->sample_rate_hz;
 	lsm6ds3_set_rate_hz(set->sample_rate_hz);
+
+	// HACK: use beta value to try different filters for LSM6DS3 TR-C
+	lsm_filter = m_settings.madgwick_beta;
 
 	if (set->type == IMU_TYPE_INTERNAL) {
 #ifdef MPU9X50_SDA_GPIO
