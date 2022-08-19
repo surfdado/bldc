@@ -96,12 +96,18 @@ void lsm6ds3_init(stm32_gpio_t *sda_gpio, int sda_pin,
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_833Hz;
 		if (is_trc) {
 			#define BW0_XL 1
-            #define LPF1_BW_SEL 2
+			#define LPF1_BW_SEL 2
 			// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 400Hz
 			txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
 		}
 	}else if(rate_hz <= 1660){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_1660Hz;
+		if (is_trc) {
+			#define BW0_XL 0
+			#define LPF1_BW_SEL 2
+			// ODR/4 with 1660Hz AND Accelerometer Analog Chain Bandwidth = 1500Hz
+			txb[1] = BW0_XL | LPF1_BW_SEL | LSM6DS3_ACC_GYRO_FS_XL_8g | LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
+		}
 	}else if(rate_hz <= 3330){
 		txb[1] |= LSM6DS3_ACC_GYRO_ODR_XL_3330Hz;
 	}else{
