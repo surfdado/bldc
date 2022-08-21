@@ -584,16 +584,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			}
 #endif
 			// For some users the balance app can't be stopped due to bad fault configs, give them a way to force write:
-			bool force_write = (appconf->timeout_msec == 99);
-			if (force_write) {
-				// Don't actually set timeout to 99ms
-				appconf->timeout_msec = app_get_configuration()->timeout_msec;
-				// For riders with a beeper give them a 1 second warning in case they are riding after all
-				beep_on(1);
-				chThdSleepMilliseconds(1000);
-				beep_off(1);
-			}
-			else if (app_is_running()) {
+			bool adcs_are_configured = ((appconf->app_balance_conf.fault_adc1 > 0) ||
+										(appconf->app_balance_conf.fault_adc2 > 0));
+			if (app_is_running() && adcs_are_configured) {
 				// Balance app is running - reject this attempt!
 				beep_alert(3, true);	// issue 3 long beeps
 				break;
