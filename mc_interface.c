@@ -2298,8 +2298,8 @@ static void update_override_limits(volatile motor_if_state_t *motor, volatile mc
 	float lo_in_max = utils_min_abs(lo_in_max_watt, lo_in_max_batt);
 	float lo_in_min = lo_in_min_watt;
 
-	// BMS limits
-	bms_update_limits(&lo_in_min,  &lo_in_max, conf->l_in_current_min, conf->l_in_current_max);
+	// NO BMS limiting for Balance Vehicles!
+	//bms_update_limits(&lo_in_min,  &lo_in_max, conf->l_in_current_min, conf->l_in_current_max);
 
 	conf->lo_in_current_max = utils_min_abs(conf->l_in_current_max, lo_in_max);
 	conf->lo_in_current_min = utils_min_abs(conf->l_in_current_min, lo_in_min);
