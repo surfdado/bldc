@@ -665,6 +665,19 @@ make -j12 build_args='-DHW_SOURCE=\"hw_ubox_single.c\" -DHW_HEADER=\"hw_ubox_sin
 cd $DIR
 cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
 
+#################### UBOX_SINGLE ########################
+
+COPYDIR=UBOX_100_SINGLE
+mkdir -p $COPYDIR
+rm -f $COPYDIR/*
+
+# default
+cd $FWPATH
+touch conf_general.h
+make -j12 build_args='-DHW_SOURCE=\"hw_ubox_100_single.c\" -DHW_HEADER=\"hw_ubox_100_single.h\"' USE_VERBOSE_COMPILE=no
+cd $DIR
+cp $FWPATH/build/BLDC_4_ChibiOS.bin $COPYDIR/VESC_default.bin
+
 #################### HW 100_500 ########################
 
 COPYDIR=100_500
