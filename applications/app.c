@@ -42,6 +42,9 @@ const app_configuration* app_get_configuration(void) {
 	return &appconf;
 }
 
+// Temp hack:
+extern float accel_lowpass_filter;
+
 /**
  * Reconfigure and restart all apps. Some apps don't have any configuration options.
  *
@@ -69,6 +72,12 @@ void app_set_configuration(app_configuration *conf) {
 #ifdef APP_CUSTOM_TO_USE
 	app_custom_stop();
 #endif
+
+	if (appconf.app_balance_conf.kd_pt1_lowpass_frequency > 1) {
+		accel_lowpass_filter = appconf.app_balance_conf.kd_pt1_lowpass_frequency;
+	} else {
+		accel_lowpass_filter = 0;
+	}
 
 	imu_init(&conf->imu_conf);
 

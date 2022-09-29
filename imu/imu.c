@@ -29,6 +29,7 @@
 #include "lsm6ds3.h"
 #include "utils.h"
 #include "Fusion.h"
+#include "digital_filter.h"
 
 #include <math.h>
 #include <string.h>
@@ -47,6 +48,9 @@ static BMI_STATE m_bmi_state;
 static imu_config m_settings;
 static systime_t init_time;
 static bool imu_ready;
+static Biquad acc_x_biquad, acc_y_biquad, acc_z_biquad;
+
+float accel_lowpass_filter = 0;
 
 // Private functions
 static void imu_read_callback(float *accel, float *gyro, float *mag);
@@ -110,6 +114,14 @@ void imu_init(imu_config *set) {
 	} else if (set->type == IMU_TYPE_EXTERNAL_BMI160) {
 		imu_init_bmi160_i2c(HW_I2C_SDA_PORT, HW_I2C_SDA_PIN,
 				HW_I2C_SCL_PORT, HW_I2C_SCL_PIN);
+	}
+
+	// Acc biquad filter
+	if(accel_lowpass_filter > 0){
+		float fc = accel_lowpass_filter / m_settings.sample_rate_hz;
+		biquad_config(&acc_x_biquad, BQ_LOWPASS, fc);
+		biquad_config(&acc_y_biquad, BQ_LOWPASS, fc);
+		biquad_config(&acc_z_biquad, BQ_LOWPASS, fc);
 	}
 }
 
@@ -493,6 +505,13 @@ static void imu_read_callback(float *accel, float *gyro, float *mag) {
 	gyro_rad[0] = DEG2RAD_f(m_gyro[0]);
 	gyro_rad[1] = DEG2RAD_f(m_gyro[1]);
 	gyro_rad[2] = DEG2RAD_f(m_gyro[2]);
+
+	// Prevent IMU confusion on bumps:
+	if(accel_lowpass_filter > 0){ // Acc biquad filter
+		//m_accel[0] = biquad_process(&acc_x_biquad, m_accel[0]);
+		//m_accel[1] = biquad_process(&acc_y_biquad, m_accel[1]);
+		m_accel[2] = biquad_process(&acc_z_biquad, m_accel[2]);
+	}
 
 	switch (m_settings.mode) {
 		case AHRS_MODE_MADGWICK:
