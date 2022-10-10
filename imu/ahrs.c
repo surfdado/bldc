@@ -24,10 +24,6 @@ static float m_kp = 0.3;
 static float m_ki = 0.0;
 static float m_beta = 0.1;
 
-bool balance_bump_correction = false;
-float balance_bump_adjuster = 0.0;
-float bump_correction_intensity = 0.0;
-
 // Private functions
 static float invSqrt(float x);
 static float calculateAccConfidence(float acc_confidence_decay, float accMag, float *accMagP);
@@ -166,9 +162,6 @@ void ahrs_update_mahony_imu(float *gyroXYZ, float *accelXYZ, float dt, ATTITUDE_
 		gx += twoKp * halfex;
 		gy += twoKp * halfey;
 		gz += twoKp * halfez;
-	}
-	if (balance_bump_correction) {
-		gy += balance_bump_adjuster;
 	}
 
 	// Integrate rate of change of quaternion
