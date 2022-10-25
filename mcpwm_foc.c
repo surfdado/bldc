@@ -193,6 +193,28 @@ typedef struct {
 	float m_r_est_state;
 } motor_all_state_t;
 
+static float smooth_erpm;
+static float bq_z1, bq_z2;
+static float bq_a0, bq_a1, bq_a2, bq_b1, bq_b2;
+static inline float mbiquad_filter(float in) {
+    float out = in * bq_a0 + bq_z1;
+    bq_z1 = in * bq_a1 + bq_z2 - bq_b1 * out;
+    bq_z2 = in * bq_a2 - bq_b2 * out;
+    return out;
+}
+static void mbiquad_config(float Fc) {
+	float K = tanf(M_PI * Fc);	// -0.0159;
+	float Q = 0.707; // maximum sharpness (0.5 = maximum smoothness)
+	float norm = 1 / (1 + K / Q + K * K);
+	bq_a0 = K * K * norm;
+	bq_a1 = 2 * bq_a0;
+	bq_a2 = bq_a0;
+	bq_b1 = 2 * (K * K - 1) * norm;
+	bq_b2 = (1 - K / Q + K * K) * norm;
+	bq_z1 = 0;
+	bq_z2 = 0;
+}
+
 // Private variables
 static volatile bool m_dccal_done = false;
 static volatile float m_last_adc_isr_duration;
@@ -293,6 +315,10 @@ static volatile bool pid_thd_stop;
 #else
 #define M_MOTOR(is_second_motor)  (((void)is_second_motor), &m_motor_1)
 #endif
+
+float mcpwm_foc_get_smooth_erpm() {
+	return smooth_erpm;
+}
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
 	utils_sys_lock_cnt();
@@ -518,6 +544,14 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 	update_hfi_samples(m_motor_2.m_conf->foc_hfi_samples, &m_motor_2);
 #endif
 
+	float foc_freq = conf_m1->foc_f_zv;
+	if (foc_freq < 1000.0) {	// this shouldn't happen
+		foc_freq = 20000.0;
+	}
+	// Configure for 90 Hertz (hard-coded atm)
+	mbiquad_config(90.0 / foc_freq);
+	smooth_erpm = 0;
+
 	virtual_motor_init(conf_m1);
 
 	TIM_DeInit(TIM1);
@@ -650,17 +684,31 @@ void mcpwm_foc_init(volatile mc_configuration *conf_m1, volatile mc_configuratio
 		}
 
 		if (!m_dccal_done) {
-			for (int i = 0;i < 3;i++) {
-				m_motor_1.m_conf->foc_offsets_voltage[i] = 0.0;
-				m_motor_1.m_conf->foc_offsets_voltage_undriven[i] = 0.0;
-				m_motor_1.m_conf->foc_offsets_current[i] = 2048;
+			m_motor_1.m_conf->foc_offsets_voltage[0] = MCCONF_FOC_OFFSETS_VOLTAGE_0;
+			m_motor_1.m_conf->foc_offsets_voltage[1] = MCCONF_FOC_OFFSETS_VOLTAGE_1;
+			m_motor_1.m_conf->foc_offsets_voltage[2] = MCCONF_FOC_OFFSETS_VOLTAGE_2;
+
+			m_motor_1.m_conf->foc_offsets_voltage_undriven[0] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_0;
+			m_motor_1.m_conf->foc_offsets_voltage_undriven[1] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_1;
+			m_motor_1.m_conf->foc_offsets_voltage_undriven[2] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_2;
+
+			m_motor_1.m_conf->foc_offsets_current[0] = MCCONF_FOC_OFFSETS_CURRENT_0;
+			m_motor_1.m_conf->foc_offsets_current[1] = MCCONF_FOC_OFFSETS_CURRENT_1;
+			m_motor_1.m_conf->foc_offsets_current[2] = MCCONF_FOC_OFFSETS_CURRENT_2;
 
 #ifdef HW_HAS_DUAL_MOTORS
-				m_motor_2.m_conf->foc_offsets_voltage[i] = 0.0;
-				m_motor_2.m_conf->foc_offsets_voltage_undriven[i] = 0.0;
-				m_motor_2.m_conf->foc_offsets_current[i] = 2048;
+			m_motor_2.m_conf->foc_offsets_voltage[0] = MCCONF_FOC_OFFSETS_VOLTAGE_0;
+			m_motor_2.m_conf->foc_offsets_voltage[1] = MCCONF_FOC_OFFSETS_VOLTAGE_1;
+			m_motor_2.m_conf->foc_offsets_voltage[2] = MCCONF_FOC_OFFSETS_VOLTAGE_2;
+
+			m_motor_2.m_conf->foc_offsets_voltage_undriven[0] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_0;
+			m_motor_2.m_conf->foc_offsets_voltage_undriven[1] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_1;
+			m_motor_2.m_conf->foc_offsets_voltage_undriven[2] = MCCONF_FOC_OFFSETS_VOLTAGE_UNDRIVEN_2;
+
+			m_motor_2.m_conf->foc_offsets_current[0] = MCCONF_FOC_OFFSETS_CURRENT_0;
+			m_motor_2.m_conf->foc_offsets_current[1] = MCCONF_FOC_OFFSETS_CURRENT_1;
+			m_motor_2.m_conf->foc_offsets_current[2] = MCCONF_FOC_OFFSETS_CURRENT_2;
 #endif
-			}
 
 			mcpwm_foc_dc_cal(false);
 		}
@@ -3045,6 +3093,9 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	pll_run(motor_now->m_motor_state.phase, dt, &motor_now->m_pll_phase, &motor_now->m_pll_speed, conf_now);
 	motor_now->m_motor_state.speed_rad_s = motor_now->m_pll_speed;
 
+	float erpm = motor_now->m_motor_state.speed_rad_s / ((2.0 * M_PI) / 60.0);
+	smooth_erpm = mbiquad_filter(erpm);
+
 	// Low latency speed estimation, for e.g. HFI.
 	{
 		float diff = utils_angle_difference_rad(motor_now->m_motor_state.phase, motor_now->m_phase_before_speed_est);
@@ -3145,7 +3196,8 @@ static void run_fw(volatile motor_all_state_t *motor, float dt) {
 		float duty_abs = motor->m_duty_abs_filtered;
 
 		if (motor->m_conf->foc_fw_duty_start < 0.99 &&
-				duty_abs > motor->m_conf->foc_fw_duty_start * motor->m_conf->l_max_duty) {
+			duty_abs > motor->m_conf->foc_fw_duty_start * motor->m_conf->l_max_duty &&
+			fabsf(smooth_erpm) > motor->m_conf->hall_sl_erpm) {
 			fw_current_now = utils_map(duty_abs,
 					motor->m_conf->foc_fw_duty_start * motor->m_conf->l_max_duty,
 					motor->m_conf->l_max_duty,
@@ -3164,7 +3216,8 @@ static void run_fw(volatile motor_all_state_t *motor, float dt) {
 			motor->m_i_fw_set = fw_current_now;
 		} else {
 			utils_step_towards((float*)&motor->m_i_fw_set, fw_current_now,
-					(dt / motor->m_conf->foc_fw_ramp_time) * motor->m_conf->foc_fw_current_max);
+				   (dt / motor->m_conf->foc_fw_ramp_time) * motor->m_conf->foc_fw_current_max);
+			fw_current_now = motor->m_i_fw_set;
 		}
 	}
 }
