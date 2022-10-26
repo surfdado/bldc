@@ -243,7 +243,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	rtkp = balance_conf.kp;
 	rtki = balance_conf.ki;
 	rti_limit = balance_conf.deadzone * 10;
-	rtd_limit = balance_conf.deadzone * 2;
 
 	max_duty_with_margin = mc_interface_get_configuration()->l_max_duty - 0.1;
 
@@ -286,8 +285,19 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	biquad_config(&torquetilt_current_biquad, BQ_LOWPASS, Fc);
 
 	angular_rate_kp = balance_conf.yaw_kp;
-	if (angular_rate_kp >= 1)
-		angular_rate_kp = 0;
+	if (angular_rate_kp >= 3) {
+		// optimized angular P
+		angular_rate_kp -= 3;
+		angular_rate_kp = fminf(3, angular_rate_kp);
+		// Cap the max amps to be contributed by the AngularP component
+		rtd_limit = balance_conf.deadzone * 3;
+		rtd_limit = fminf(20, rtd_limit);
+		rtd_limit = fmaxf(5, rtd_limit);
+	}
+	else {
+		// don't mess with angular P
+		rtd_limit = 0;
+	}
 
 	// Feature: ATR:
 	tt_accel_factor = fmaxf(5, balance_conf.yaw_kd);	// how many amps per acc?
@@ -1498,9 +1508,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Add angular rate to pid_value:
-				if (angular_rate_kp > 0) {
-					float gyro[3];
-					imu_get_gyro(gyro);
+				float gyro[3];
+				imu_get_gyro(gyro);
+				if (rtd_limit > 0) {
+					// Optimized implementation of Angular Rate P:
+					// Allow high dampening, limit reinforcing
 					pid_angular_rate = -gyro[1] * angular_rate_kp;
 					if (is_upside_down) {
 						pid_angular_rate = -pid_angular_rate;
@@ -1516,6 +1528,10 @@ static THD_FUNCTION(balance_thread, arg) {
 							fminf(rtd_limit, fabsf(pid_angular_rate));
 					}
 					new_pid_value += pid_angular_rate;
+				}
+				else {
+					// Default/stable implementation of Angular Rate P:
+					new_pid_value -= gyro[1] * angular_rate_kp;
 				}
 
 				// Current Limiting!
