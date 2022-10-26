@@ -1601,6 +1601,8 @@ static THD_FUNCTION(balance_thread, arg) {
 					}
 					break;
 				}
+				// Disable output
+				brake();
 				break;
 			case (FAULT_DUTY):
 				// We need another fault to clear duty fault.
