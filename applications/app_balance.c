@@ -1510,13 +1510,15 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Add angular rate to pid_value:
 				float gyro[3];
 				imu_get_gyro(gyro);
+
+				pid_angular_rate = -gyro[1] * angular_rate_kp;
+				if (is_upside_down) {
+					pid_angular_rate = -pid_angular_rate;
+				}
+				
+				// Optimized implementation of Angular Rate P:
 				if (rtd_limit > 0) {
-					// Optimized implementation of Angular Rate P:
 					// Allow high dampening, limit reinforcing
-					pid_angular_rate = -gyro[1] * angular_rate_kp;
-					if (is_upside_down) {
-						pid_angular_rate = -pid_angular_rate;
-					}
 					if (SIGN(pid_angular_rate) == SIGN(pid_prop)) {
 						// reinforce proportional at half the intensity only
 						pid_angular_rate /= 2;
@@ -1527,12 +1529,9 @@ static THD_FUNCTION(balance_thread, arg) {
 						pid_angular_rate = SIGN(pid_angular_rate) *
 							fminf(rtd_limit, fabsf(pid_angular_rate));
 					}
-					new_pid_value += pid_angular_rate;
 				}
-				else {
-					// Default/stable implementation of Angular Rate P:
-					new_pid_value -= gyro[1] * angular_rate_kp;
-				}
+
+				new_pid_value += pid_angular_rate;
 
 				// Current Limiting!
 				float current_limit;
