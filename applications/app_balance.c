@@ -618,8 +618,8 @@ static bool check_faults(bool ignoreTimers){
 				state = FAULT_SWITCH_FULL;
 				return true;
 			}
-			else if ((abs_erpm < quickstop_erpm) && (fabsf(true_pitch_angle) > 14) && (SIGN(true_pitch_angle) == SIGN(erpm)) && (!is_dual_switch)) {
-				// QUICK STOP (if POSI isn't enabled)
+			else if ((abs_erpm < quickstop_erpm) && (fabsf(true_pitch_angle) > 14) && (SIGN(true_pitch_angle) == SIGN(erpm))/* && (!is_dual_switch)*/) {
+				// QUICK STOP (now enabled for POSI)
 				state = FAULT_QUICKSTOP;
 				return true;
 			}
