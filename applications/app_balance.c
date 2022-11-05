@@ -341,6 +341,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		if (braketilt_factor < 0) {
 			braketilt_factor = 5;
 		}
+		// incorporate negative sign into braketilt factor instead of adding it each balance loop
 		braketilt_factor = -(0.5 + braketilt_factor / 5.0);
 	}
 	brakestep_modifier = fminf(5, balance_conf.kd_pt1_lowpass_frequency);
@@ -450,7 +451,7 @@ static void reset_vars(void){
 	torquetilt_target = 0;
 	torquetilt_interpolated = 0;
 	torquetilt_filtered_current = 0;
-	braketilt_factor = 0;
+	braketilt_target = 0;
 	braketilt_interpolated = 0;
 	biquad_reset(&torquetilt_current_biquad);
 	braketilt_interpolated = 0;
@@ -1055,7 +1056,7 @@ static void apply_torquetilt(void){
 		}
 
 		// braking also should cause setpoint change lift, causing a delayed lingering nose lift
-		if ((braketilt_factor > 0) && braking && (abs_erpm > 2000)) {
+		if ((braketilt_factor < 0) && braking && (abs_erpm > 2000)) {
 			// negative currents alone don't necessarily consitute active braking, look at proportional:
 			if (SIGN(proportional) != SIGN(erpm)) {
 				float downhill_damper = 1;
