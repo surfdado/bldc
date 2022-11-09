@@ -97,7 +97,8 @@ static float max_continuous_current;
 static bool current_beeping;
 static bool duty_beeping;
 static bool show_revision;
-static float booster_amps, booster_angle, booster_ramp;
+static float booster_current_acc, booster_angle_acc, booster_ramp_acc;
+static float booster_current_brk, booster_angle_brk, booster_ramp_brk;
 
 // Runtime values read from elsewhere
 static float pitch_angle, last_pitch_angle, roll_angle, abs_roll_angle;
@@ -251,10 +252,43 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	else
 		erpm_sign = 1;
 
-	booster_amps = balance_conf.booster_current;
-	booster_angle = balance_conf.booster_angle;
-	booster_ramp = balance_conf.booster_ramp;
-	
+	if ((balance_conf.booster_angle == 0) || (balance_conf.booster_current >= 10)) {
+		// disable booster current if we detect 5.3 stable or pre ATR24 settings
+		booster_current_acc = 0;
+		booster_angle_acc = 180;
+		booster_ramp_acc = 0;
+		booster_current_brk = 0;
+		booster_angle_brk = 180;
+		booster_ramp_brk = 0;
+	}
+	else {
+		// booster current = x.y
+		// x = 0..9 for acceleration (maps to 0..45A)
+		// y = 0..9 for braking
+		int boost = balance_conf.booster_current;
+		booster_current_acc = boost * 5;
+		booster_current_brk = (balance_conf.booster_current - boost) * 50;
+
+		// booster angle = x.y
+		// x = 0..n for acceleration
+		// y = 0..9 for braking
+		boost = balance_conf.booster_angle;
+		booster_angle_acc = boost;
+		booster_angle_brk = (balance_conf.booster_angle - boost) * 10;
+
+		// booster ramp = x.y
+		// x = 0..n for acceleration
+		// y = 0..9 for braking
+		boost = balance_conf.booster_ramp;
+		booster_ramp_acc = boost;
+		booster_ramp_brk = (balance_conf.booster_ramp - boost) * 10;
+
+		// use multiplication instead of division in the balance loop
+		// limit to 10 Amps per degree
+		booster_current_acc = fminf(10, booster_current_acc / booster_ramp_acc);
+		booster_current_brk = fminf(10, booster_current_brk / booster_ramp_brk);
+	}
+
 	// Feature: Reverse Stop (ON if startup_speed ends in .1)
 	// startup_speed = x.0: noticeable click on start, no reverse stop
 	// startup_speed = x.1: noticeable click on start, reverse stop
@@ -302,11 +336,6 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Feature: ATR:
 	tt_accel_factor = fmaxf(5, balance_conf.yaw_kd);	// how many amps per acc?
 	tt_accel_factor = fminf(30, tt_accel_factor);
-
-	// How much does Torque-Tilt stiffen PIDs - intensity = 1 doubles PIDs at 6 degree TT
-	tt_pid_intensity = 0.5;//balance_conf.booster_current;
-	tt_pid_intensity = fminf(tt_pid_intensity, 1.5);
-	tt_pid_intensity = fmaxf(tt_pid_intensity, 0);
 
 	og_tt_strength = 0;
 	if (app_get_configuration()->app_nrf_conf.address[0] == 99) {
@@ -1375,7 +1404,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 		switch_state = check_adcs();
 
-		float pid_prop = 0, pid_integral = 0, pid_angular_rate = 0;
+		float pid_prop = 0, pid_integral = 0, pid_angular_rate = 0, pid_booster = 0;
 		log_balance_state = state;
 		balance_setpoint = setpoint;
 		balance_atr = torquetilt_interpolated;
@@ -1486,27 +1515,25 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				last_proportional = proportional;
 
-				// Apply Booster
-				abs_proportional = fabsf(proportional);
-				float booster_current = booster_amps;
+				// True Booster, based on true angle
+				float true_proportional = setpoint - true_pitch_angle;
+				float abs_proportional = fabsf(true_proportional);
+				float boost_angle = braking ? booster_angle_brk : booster_angle_acc;
 
-				// Make booster a bit stronger at higher speed (up to 2x stronger when braking)
-				const float boost_min_erpm = 3000;
-				if (abs_erpm > boost_min_erpm) {
-					float speedstiffness = fminf(1, (abs_erpm - boost_min_erpm) / 10000);
-					if (braking)
-						booster_current += booster_current * speedstiffness;
-					else
-						booster_current += booster_current * speedstiffness / 2;
-				}
-				
-				if(abs_proportional > booster_angle){
-					if(abs_proportional - booster_angle < booster_ramp){
-						new_pid_value += (booster_current * SIGN(proportional)) * ((abs_proportional - booster_angle) / booster_ramp);
+				if(abs_proportional > boost_angle){
+					float boost_ramp = booster_ramp_acc;
+					float boost_current = booster_current_acc;
+					if (braking) {
+						boost_ramp = booster_ramp_brk;
+						boost_current = booster_current_brk;
+					}
+					if(abs_proportional - boost_angle < boost_ramp){
+						pid_booster = boost_current * SIGN(true_proportional) * (abs_proportional - boost_angle);
 					}else{
-						new_pid_value += booster_current * SIGN(proportional);
+						pid_booster = boost_current * SIGN(true_proportional) * boost_ramp;
 					}
 				}
+				new_pid_value += pid_booster;
 
 				// Add angular rate to pid_value:
 				float gyro[3];
