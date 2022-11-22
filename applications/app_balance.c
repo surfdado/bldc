@@ -84,6 +84,7 @@ static thread_t *app_thread;
 static volatile balance_config balance_conf;
 static volatile imu_config imu_conf;
 static systime_t loop_time;
+static unsigned int start_counter_clicks, start_counter_clicks_max, start_click_current;
 static float startup_step_size;
 static float tiltback_duty_step_size, tiltback_hv_step_size, tiltback_lv_step_size, tiltback_return_step_size;
 static float torquetilt_on_step_size, torquetilt_off_step_size, turntilt_step_size;
@@ -203,6 +204,12 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	torquetilt_off_step_size = balance_conf.torquetilt_off_speed / balance_conf.hertz;
 	turntilt_step_size = balance_conf.turntilt_speed / balance_conf.hertz;
 	noseangling_step_size = balance_conf.noseangling_speed / balance_conf.hertz;
+
+	// Feature: Stealthy start vs normal start (noticeable click when engaging) - 0-20A
+	int bc = balance_conf.brake_current;
+	start_click_current = (balance_conf.brake_current - bc) * 100;
+	start_click_current = fminf(start_click_current, 40) / 2;
+	start_counter_clicks_max = 3;
 
 	mc_max_temp_fet = mc_interface_get_configuration()->l_temp_fet_start - 3;
 	mc_max_temp_mot = mc_interface_get_configuration()->l_temp_motor_start - 3;
@@ -509,6 +516,9 @@ static void reset_vars(void){
 	// Turntilt:
 	last_yaw_angle = 0;
 	yaw_aggregate = 0;
+
+	// Feature: click on start
+	start_counter_clicks = start_counter_clicks_max;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -1515,47 +1525,51 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				last_proportional = proportional;
 
-				// True Booster, based on true angle
-				float true_proportional = setpoint - true_pitch_angle;
-				float abs_proportional = fabsf(true_proportional);
-				float boost_angle = braking ? booster_angle_brk : booster_angle_acc;
+				// Start booster and angularP portion a few cycles later, after the start clicks have been emitted
+				// this keeps the start smooth and predictable
+				if (start_counter_clicks == 0) {
+					// True Booster, based on true angle
+					float true_proportional = setpoint - true_pitch_angle;
+					float abs_proportional = fabsf(true_proportional);
+					float boost_angle = braking ? booster_angle_brk : booster_angle_acc;
 
-				if(abs_proportional > boost_angle){
-					float boost_ramp = booster_ramp_acc;
-					float boost_current = booster_current_acc;
-					if (braking) {
-						boost_ramp = booster_ramp_brk;
-						boost_current = booster_current_brk;
+					if(abs_proportional > boost_angle){
+						float boost_ramp = booster_ramp_acc;
+						float boost_current = booster_current_acc;
+						if (braking) {
+							boost_ramp = booster_ramp_brk;
+							boost_current = booster_current_brk;
+						}
+						if(abs_proportional - boost_angle < boost_ramp){
+							pid_booster = boost_current * SIGN(true_proportional) * (abs_proportional - boost_angle);
+						}else{
+							pid_booster = boost_current * SIGN(true_proportional) * boost_ramp;
+						}
 					}
-					if(abs_proportional - boost_angle < boost_ramp){
-						pid_booster = boost_current * SIGN(true_proportional) * (abs_proportional - boost_angle);
-					}else{
-						pid_booster = boost_current * SIGN(true_proportional) * boost_ramp;
-					}
-				}
-				new_pid_value += pid_booster;
+					new_pid_value += pid_booster;
 
-				// Add angular rate to pid_value:
-				float gyro[3];
-				imu_get_gyro(gyro);
+					// Add angular rate to pid_value:
+					float gyro[3];
+					imu_get_gyro(gyro);
 
-				pid_angular_rate = -gyro[1] * angular_rate_kp;
-				if (is_upside_down) {
-					pid_angular_rate = -pid_angular_rate;
-				}
-				
-				// Optimized implementation of Angular Rate P:
-				if (rtd_limit > 0) {
-					// Allow high dampening, limit reinforcing
-					if (SIGN(pid_angular_rate) == SIGN(pid_prop)) {
-						// reinforce proportional at half the intensity only
-						pid_angular_rate /= 2;
-						pid_angular_rate = SIGN(pid_angular_rate) *
-							fminf(rtd_limit / 3, fabsf(pid_angular_rate));
+					pid_angular_rate = -gyro[1] * angular_rate_kp;
+					if (is_upside_down) {
+						pid_angular_rate = -pid_angular_rate;
 					}
-					else {
-						pid_angular_rate = SIGN(pid_angular_rate) *
-							fminf(rtd_limit, fabsf(pid_angular_rate));
+
+					// Optimized implementation of Angular Rate P:
+					if (rtd_limit > 0) {
+						// Allow high dampening, limit reinforcing
+						if (SIGN(pid_angular_rate) == SIGN(pid_prop)) {
+							// reinforce proportional at half the intensity only
+							pid_angular_rate /= 2;
+							pid_angular_rate = SIGN(pid_angular_rate) *
+								fminf(rtd_limit / 3, fabsf(pid_angular_rate));
+						}
+						else {
+							pid_angular_rate = SIGN(pid_angular_rate) *
+								fminf(rtd_limit, fabsf(pid_angular_rate));
+						}
 					}
 				}
 
@@ -1607,7 +1621,18 @@ static THD_FUNCTION(balance_thread, arg) {
 				}
 
 				// Output to motor
-				set_current(pid_value);
+				if (start_counter_clicks) {
+					// Generate alternate pulses to produce distinct "click"
+					start_counter_clicks--;
+					if ((start_counter_clicks & 0x1) == 0)
+						set_current(pid_value - start_click_current);
+					else
+						set_current(pid_value + start_click_current);
+				}
+				else {
+					set_current(pid_value);
+				}
+
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
