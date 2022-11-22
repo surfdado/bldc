@@ -116,7 +116,8 @@ static SwitchState switch_state;
 static float rtkp, rtki, rti_limit, rtd_limit;
 static float og_tt_target;
 static float og_tt_strength;
-static float tt_pid_intensity, tt_speedboost_intensity, tt_strength_uphill;
+static float tt_speedboost_intensity, tt_strength_uphill;
+static float tt_response_boost, tt_release_boost;
 static float integral_tt_impact_uphill, integral_tt_impact_downhill;
 static float acceleration, last_erpm;
 static float accel_gap;
@@ -137,7 +138,7 @@ static float turntilt_strength;
 // Rumtime state values
 static BalanceState state;
 static float proportional, integral;
-static float last_proportional, abs_proportional;
+static float last_proportional;
 static float pid_value;
 static float setpoint, setpoint_target, setpoint_target_interpolated;
 static float noseangling_interpolated;
@@ -349,9 +350,16 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 		og_tt_strength = app_get_configuration()->app_nrf_conf.address[2] / 100;
 	}
 
+	// Boost in TT strength above 3000 erpm
 	int ttstart = balance_conf.torquetilt_start_current;
 	tt_speedboost_intensity = balance_conf.torquetilt_start_current - ttstart;
 	tt_speedboost_intensity = fminf(0.5, tt_speedboost_intensity); // 50% is more than enough!
+
+	// Torquetilt response time boosts, one for speed, and another for quick release on ATR reversal
+	int tton = balance_conf.torquetilt_on_speed;
+	int ttoff = balance_conf.torquetilt_off_speed;
+	tt_response_boost = fminf(2, 1 + (balance_conf.torquetilt_on_speed - tton));
+	tt_release_boost = 1 + (balance_conf.torquetilt_off_speed - ttoff) * 10;
 
 	// Torque-Tilt strength is different for up vs downhills
 	tt_strength_uphill = balance_conf.torquetilt_strength * 10;
@@ -1081,7 +1089,6 @@ static void apply_torquetilt(void){
 
 		// now torquetilt target is purely based on gap between expected and actual acceleration
 		float new_ttt = torquetilt_strength * accel_gap;
-
 		if (!braking && (abs_erpm > 250))  {
 			float og_tt_angle_limit = 3;
 			float og_tt_start_current = 15;
@@ -1119,27 +1126,35 @@ static void apply_torquetilt(void){
 		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
 		torquetilt_target = fmaxf(torquetilt_target, -balance_conf.torquetilt_angle_limit);
 
+		float response_boost = 1;
+		if (abs_erpm > 2500) {
+			response_boost = tt_response_boost;
+		}
+		if (abs_erpm > 6000) {
+			response_boost *= tt_response_boost;
+		}
+
 		// Key to keeping the board level and consistent is to determine the appropriate step size!
 		// We want to react quickly to changes, but we don't want to overreact to glitches in acceleration data
 		// or trigger oscillations...
+		const float TT_BOOST_MARGIN = 2;
 		if (forward) {
 			if (torquetilt_interpolated < 0) {
 				// downhill
 				if (torquetilt_interpolated < torquetilt_target) {
 					// to avoid oscillations we go down slower than we go up
 					step_size = torquetilt_off_step_size;
+					if ((torquetilt_target > 0)
+						&& ((torquetilt_target - torquetilt_interpolated) > TT_BOOST_MARGIN)
+						&& (abs_erpm > 2000))
+					{
+						// boost the speed if tilt target has reversed (and if there's a significant margin)
+						step_size = torquetilt_off_step_size * tt_release_boost;
+					}
 				}
 				else {
 					// torquetilt is increasing
-					if (braking) {
-						// braking downhill, do it only half as aggressively as pushing uphill
-						// a little short taildrag is acceptable
-						step_size = torquetilt_on_step_size;
-					}
-					else {
-						// we arent braking yet there's reverse torquetilt? How does this happen??
-						step_size = torquetilt_on_step_size;
-					}
+					step_size = torquetilt_on_step_size * response_boost;
 				}
 			}
 			else {
@@ -1150,7 +1165,7 @@ static void apply_torquetilt(void){
 					step_size = torquetilt_off_step_size;
 				}else{
 					// standard case of increasing torquetilt
-					step_size = torquetilt_on_step_size;
+					step_size = torquetilt_on_step_size * response_boost;
 				}
 			}
 		}
@@ -1160,18 +1175,16 @@ static void apply_torquetilt(void){
 				if (torquetilt_interpolated > torquetilt_target) {
 					// to avoid oscillations we go down slower than we go up
 					step_size = torquetilt_off_step_size;
+					if ((torquetilt_target < 0)
+						&& ((torquetilt_interpolated - torquetilt_target) > TT_BOOST_MARGIN)
+						&& (abs_erpm > 2000)) {
+						// boost the speed if tilt target has reversed (and if there's a significant margin)
+						step_size = torquetilt_off_step_size * tt_release_boost;
+					}
 				}
 				else {
 					// torquetilt is increasing
-					if (braking) {
-						// braking downhill, do it only half as aggressively as pushing uphill
-						// a little short taildrag is acceptable
-						step_size = torquetilt_on_step_size;
-					}
-					else {
-						// we arent braking yet there's reverse torquetilt? Probably impossible
-						step_size = torquetilt_on_step_size;
-					}
+					step_size = torquetilt_on_step_size * response_boost;
 				}
 			}
 			else {
@@ -1181,7 +1194,7 @@ static void apply_torquetilt(void){
 					step_size = torquetilt_off_step_size;
 				}else{
 					// standard case of increasing torquetilt
-					step_size = torquetilt_on_step_size;
+					step_size = torquetilt_on_step_size * response_boost;
 				}
 			}
 		}
@@ -1200,6 +1213,7 @@ static void apply_torquetilt(void){
 		torquetilt_interpolated -= step_size;
 	}
 
+	// brake tilt
 	step_size = torquetilt_off_step_size / brakestep_modifier;
 	if(fabsf(braketilt_target) > fabsf(braketilt_interpolated)) {
 		step_size = torquetilt_on_step_size * 1.5;
