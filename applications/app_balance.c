@@ -728,7 +728,7 @@ void app_balance_flywheel_toggle()
 
 			// Limit speed of wheel and limit amps
 			backup_erpm = mc_interface_get_configuration()->l_max_erpm;
-			mc_interface_set_erpmlimit(6000);
+			//mc_interface_set_erpmlimit(6000);
 			mc_current_max = mc_current_min = 30;
 
 			// No I-term
@@ -749,7 +749,7 @@ void app_balance_flywheel_toggle()
 			allow_upside_down = false;
 		} else {
 			// Just entirely restore the app settings
-			mc_interface_set_erpmlimit(backup_erpm > 6000 ? backup_erpm : 20000);
+			//mc_interface_set_erpmlimit(backup_erpm > 6000 ? backup_erpm : 20000);
 			app_configuration *appconf = mempools_alloc_appconf();
 			conf_general_read_app_configuration(appconf);
 			app_set_configuration(appconf);
