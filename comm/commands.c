@@ -94,6 +94,26 @@ static volatile int fw_version_sent_cnt = 0;
 static bool is_initialized = false;
 static int nrf_flags = 0;
 
+extern int log_balance_state;
+extern float balance_setpoint, balance_atr, balance_carve, balance_true_pitch;
+extern float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+extern float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
+extern char ssstate[LOGBUFSIZE];
+static int logidx;
+
+void commands_reset_logidx() {
+	logidx = 0;
+}
+
+void commands_balance_lock(bool lock)
+{
+	// Calling set configuration directly causes a watchdog reset, so we use a command instead
+	unsigned char data[2];
+	data[0] = COMM_SURF_LOCK;
+	data[1] = lock;
+	commands_send_packet(data, 2);
+}
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&terminal_mutex);

@@ -56,4 +56,7 @@ int commands_get_fw_version_sent_cnt(void);
 void commands_lock_writes(bool lock);
 bool commands_check_writelock(void);
 
+void commands_reset_logidx(void);
+void commands_balance_lock(bool lock);
+
 #endif /* COMMANDS_H_ */
