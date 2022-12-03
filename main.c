@@ -35,6 +35,7 @@
 #include "terminal.h"
 #include "hw.h"
 #include "app.h"
+#include "buzzer.h"
 #include "packet.h"
 #include "commands.h"
 #include "timeout.h"
@@ -113,7 +114,7 @@ static THD_FUNCTION(led_thread, arg) {
 		mc_state state2 = mc_interface_get_state();
 		mc_interface_select_motor_thread(1);
 		if ((state1 == MC_STATE_RUNNING) || (state2 == MC_STATE_RUNNING)) {
-			ledpwm_set_intensity(LED_GREEN, 1.0);
+			ledpwm_set_intensity(LED_GREEN, 0.5);
 		} else {
 			ledpwm_set_intensity(LED_GREEN, 0.2);
 		}
@@ -229,7 +230,7 @@ int main(void) {
 	palClearPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
 
-	chThdSleepMilliseconds(100);
+	chThdSleepMilliseconds(80);
 
 	mempools_init();
 	events_init();
@@ -237,8 +238,22 @@ int main(void) {
 	LED_RED_OFF();
 	LED_GREEN_OFF();
 
+	// Let the rider know that the board is booting (short beep)
+	buzzer_enable(true);
+	beep_on(1);
+	chThdSleepMilliseconds(20);
+	beep_off(1);
+
 	timer_init();
 	conf_general_init();
+
+	// Read configuration / IMU init before motor init so the IMU is ready when the balance app starts
+	app_uartcomm_initialize();
+	app_configuration *appconf = mempools_alloc_appconf();
+	conf_general_read_app_configuration(appconf);
+	imu_init(&appconf->imu_conf);
+
+	buzzer_enable(appconf->servo_out_enable);
 
 	if( flash_helper_verify_flash_memory() == FAULT_CODE_FLASH_CORRUPTION )	{
 		// Loop here, it is not safe to run any code
@@ -263,9 +278,7 @@ int main(void) {
 	comm_can_init();
 #endif
 
-	app_uartcomm_initialize();
-	app_configuration *appconf = mempools_alloc_appconf();
-	conf_general_read_app_configuration(appconf);
+	// Keep the app configuration after motor configuration
 	app_set_configuration(appconf);
 	app_uartcomm_start(UART_PORT_BUILTIN);
 	app_uartcomm_start(UART_PORT_EXTRA_HEADER);
@@ -305,7 +318,7 @@ int main(void) {
 
 	imu_reset_orientation();
 
-	chThdSleepMilliseconds(500);
+	chThdSleepMilliseconds(200);
 	m_init_done = true;
 
 #ifdef BOOT_OK_GPIO

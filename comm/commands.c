@@ -18,6 +18,8 @@
  */
 
 #include "commands.h"
+
+#include "buzzer.h"
 #include "ch.h"
 #include "hal.h"
 #include "mc_interface.h"
@@ -74,6 +76,40 @@ static thread_t *blocking_tp;
 static bool is_lock_initialized = false;
 static bool writelock = false;//true;
 static unsigned int writelock_pin = 0;
+
+// Runtime-Config:
+bool rtcfg_is_locked;
+float rtcfg_kp;
+float rtcfg_ki;
+float rtcfg_kd;
+float rtcfg_ilimit;
+float rtcfg_boost_angle;
+float rtcfg_boost_ramp;
+float rtcfg_boost_amps;
+float rtcfg_mahony_kp;
+
+float rtcfg_atr_strength;
+float rtcfg_atr_ttstrength;
+float rtcfg_atr_boost;
+float rtcfg_atr_angle;
+float rtcfg_atr_tiltdown;
+float rtcfg_atr_tiltup;
+int rtcfg_atr_speed1;
+int rtcfg_atr_speed2;
+float rtcfg_atr_offset;
+float rtcfg_atr_ratio;
+float rtcfg_atr_filter;
+
+float rtcfg_startup_speed = 0;
+float rtcfg_pitch_tolerance = 0;
+float rtcfg_const_tiltback;
+float rtcfg_speed_tiltback_rate;
+float rtcfg_speed_tiltback_max;
+float rtcfg_brake_current;
+bool rtcfg_datareceived1 = false;
+bool rtcfg_datareceived2 = false;
+
+bool is_floatcontrol = false;
 
 // Private variables
 static char print_buffer[PRINT_BUFFER_SIZE];
@@ -305,6 +341,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_buffer[ind++] = COMM_FW_VERSION;
 		send_buffer[ind++] = FW_VERSION_MAJOR;
 		send_buffer[ind++] = FW_VERSION_MINOR;
+		is_floatcontrol = false;
 
 		strcpy((char*)(send_buffer + ind), HW_NAME);
 		ind += strlen(HW_NAME) + 1;
@@ -475,55 +512,100 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float16(send_buffer, logidx, 1e0, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_id(), 1e2, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf0[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, balance_atr/*mc_interface_read_reset_avg_id()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_iq(), 1e2, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf1[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, balance_carve/*mc_interface_read_reset_avg_iq()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 6)) {
 			buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 7)) {
-			buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf2[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 8)) {
-			buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
+			if (buf1[0] == 5555) {
+				buffer_append_float32(send_buffer, buf3[logidx], 1e2, &ind);
+			}
+			else
+				buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			buffer_append_float32(send_buffer, mc_interface_get_amp_hours(false), 1e4, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf4[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_get_amp_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			buffer_append_float32(send_buffer, mc_interface_get_amp_hours_charged(false), 1e4, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf5[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_get_amp_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf6[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf7[logidx], 1e2, &ind);
+			else
+				buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf8[logidx], 1e2, &ind);
+			else
+				buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
-			buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
+			if (buf1[0] == 5555)
+				buffer_append_float32(send_buffer, buf9[logidx], 1e2, &ind);
+			else
+				buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
+
+			if (buf1[0] == 5555) {
+				if (logidx < LOGBUFSIZE-1)
+					logidx++;
+				else
+					logidx = 0;
+			}
 		}
 		if (mask & ((uint32_t)1 << 15)) {
-			send_buffer[ind++] = mc_interface_get_fault();
+			if (buf1[0] == 5555)
+				send_buffer[ind++] = ssstate[logidx];
+			else
+				send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 16)) {
-			buffer_append_float32(send_buffer, mc_interface_get_pid_pos_now(), 1e6, &ind);
+			buffer_append_float32(send_buffer, balance_setpoint /*mc_interface_get_pid_pos_now()*/, 1e6, &ind);
 		}
 		if (mask & ((uint32_t)1 << 17)) {
-			uint8_t current_controller_id = app_get_configuration()->controller_id;
+			//uint8_t current_controller_id = app_get_configuration()->controller_id;
 #ifdef HW_HAS_DUAL_MOTORS
 			if (mc_interface_get_motor_thread() == 2) {
-				current_controller_id = utils_second_motor_id();
+				//current_controller_id = utils_second_motor_id();
 			}
 #endif
-			send_buffer[ind++] = current_controller_id;
+			send_buffer[ind++] = log_balance_state; //current_controller_id;
+			//send_buffer[ind++] = current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
 			if (mc_interface_get_motor_thread() == 2) {
@@ -537,10 +619,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			}
 		}
 		if (mask & ((uint32_t)1 << 19)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_vd(), 1e3, &ind);
+			buffer_append_float32(send_buffer, balance_true_pitch /*mc_interface_read_reset_avg_vd()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {
-			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_vq(), 1e3, &ind);
+			buffer_append_float32(send_buffer, foc_get_fw_current_now() /*mc_interface_read_reset_avg_vq()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 21)) {
 			uint8_t status = 0;
@@ -792,14 +874,26 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pid_output() * 1000000.0), &ind);
 		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pitch_angle() * 1000000.0), &ind);
 		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_roll_angle() * 1000000.0), &ind);
-		buffer_append_uint32(send_buffer, app_balance_get_diff_time(), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_motor_current() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug1() * 1000000.0), &ind);
+		if (is_floatcontrol) {
+			buffer_append_int32(send_buffer, balance_setpoint * 1000.0, &ind);
+			buffer_append_int32(send_buffer, balance_atr * 1000.0, &ind);
+			buffer_append_int32(send_buffer, balance_carve * 1000.0, &ind);
+		}
+		else {
+			buffer_append_uint32(send_buffer, app_balance_get_diff_time(), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_motor_current() * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug1() * 1000000.0), &ind);
+		}
 		buffer_append_uint16(send_buffer, app_balance_get_state(), &ind);
 		buffer_append_uint16(send_buffer, app_balance_get_switch_state(), &ind);
 		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc1() * 1000000.0), &ind);
 		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc2() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug2() * 1000000.0), &ind);
+		if (is_floatcontrol) {
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_true_pitch_angle() * 1000000.0), &ind);
+		}
+		else {
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug2() * 1000000.0), &ind);
+		}
 		reply_func(send_buffer, ind);
 	} break;
 
@@ -992,19 +1086,20 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = mc_interface_get_fault();
 		}
 		if (mask & ((uint32_t)1 << 17)) {
-			uint8_t current_controller_id = app_get_configuration()->controller_id;
+			//uint8_t current_controller_id = app_get_configuration()->controller_id;
 #ifdef HW_HAS_DUAL_MOTORS
 			if (mc_interface_get_motor_thread() == 2) {
-				current_controller_id = utils_second_motor_id();
+				//current_controller_id = utils_second_motor_id();
 			}
 #endif
-			send_buffer[ind++] = current_controller_id;
+			send_buffer[ind++] = log_balance_state; //current_controller_id;
 		}
 		if (mask & ((uint32_t)1 << 18)) {
 			send_buffer[ind++] = val.num_vescs;
 		}
 		if (mask & ((uint32_t)1 << 19)) {
-			buffer_append_float32(send_buffer, wh_batt_left, 1e3, &ind);
+			buffer_append_float32(send_buffer, foc_get_fw_current_now(), 1e3, &ind);
+			//buffer_append_float32(send_buffer, wh_batt_left, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {
 			buffer_append_uint32(send_buffer, mc_interface_get_odometer(), &ind);
@@ -1790,6 +1885,231 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = writelock_pin & 0xFF;
 			reply_func(send_buffer, ind);
 		}
+	} break;
+
+	case COMM_SURF_GET_INFO: {	// 192
+		int32_t ind = 0;
+		uint8_t send_buffer[100];
+		send_buffer[ind++] = COMM_SURF_GET_INFO;
+		send_buffer[ind++] = 100;	// magic number!
+		send_buffer[ind++] = SURF_CUSTOM_VERSION;
+		is_floatcontrol = true;
+
+		if (rtcfg_datareceived1 || rtcfg_datareceived2) {
+			// After making changes to runtime config, we store config values locally (they're not persistent)
+			send_buffer[ind++] = rtcfg_is_locked;
+			send_buffer[ind++] = !is_buzzer_enabled();
+			buffer_append_uint16(send_buffer, rtcfg_startup_speed * 10, &ind);
+			buffer_append_uint16(send_buffer, rtcfg_pitch_tolerance * 10, &ind);
+			send_buffer[ind++] = rtcfg_const_tiltback * 10;
+			send_buffer[ind++] = rtcfg_speed_tiltback_rate * 10;
+			send_buffer[ind++] = rtcfg_speed_tiltback_max * 10;
+			send_buffer[ind++] = rtcfg_brake_current * 10;
+		}
+
+		if (rtcfg_datareceived2) {
+            send_buffer[ind++] = rtcfg_kp;
+			send_buffer[ind++] = rtcfg_ki * 1000;
+			send_buffer[ind++] = rtcfg_kd / 10;
+			send_buffer[ind++] = rtcfg_ilimit;
+			send_buffer[ind++] = rtcfg_boost_angle * 10;
+			send_buffer[ind++] = rtcfg_boost_ramp * 10;
+			send_buffer[ind++] = rtcfg_boost_amps;
+			send_buffer[ind++] = rtcfg_mahony_kp * 10;
+
+			send_buffer[ind++] = rtcfg_atr_strength * 100;
+			send_buffer[ind++] = rtcfg_atr_ttstrength * 100;
+			send_buffer[ind++] = rtcfg_atr_tiltdown;
+			send_buffer[ind++] = rtcfg_atr_tiltup;
+		}
+
+		if (0) {
+			send_buffer[ind++] = rtcfg_atr_boost;
+			send_buffer[ind++] = rtcfg_atr_angle * 10;
+			send_buffer[ind++] = rtcfg_atr_speed1 * 10;
+			send_buffer[ind++] = rtcfg_atr_speed2 * 10;
+			send_buffer[ind++] = rtcfg_atr_offset;
+			send_buffer[ind++] = rtcfg_atr_ratio;
+			send_buffer[ind++] = rtcfg_atr_filter;
+		}
+
+		reply_func(send_buffer, ind);
+
+	} break;
+
+	case COMM_SURF_RTCONFIG1: {	// 193
+		int32_t ind = 0;
+		uint8_t magic_number = data[ind++];
+		if (magic_number == 100) {
+			// note: most flags get decoded in balance app function
+			uint8_t flags = data[ind++];
+
+			bool atr_toggle = (flags & 0x32) != 0;
+			if (atr_toggle) {
+				app_balance_atr_toggle();
+				break;
+			}
+
+			rtcfg_is_locked = flags & 0x1 / 0x1;
+			bool rtcfg_buzz_disable = (flags & 0x2) != 0;
+			float revstop = (flags & 0x4) ? 0.1 : 0;
+
+			// instantly enable/disable buzzer
+			buzzer_enable(!rtcfg_buzz_disable);
+
+			// instantly lock/unlock - but only if a change was detected (writes configuration!)
+			bool current_is_locked = app_get_configuration()->app_balance_conf.multi_esc;
+			if (rtcfg_is_locked != current_is_locked)
+				commands_balance_lock(rtcfg_is_locked);
+
+			rtcfg_startup_speed = (float)data[ind++] + revstop;
+			rtcfg_pitch_tolerance = ((float)(data[ind++] / 10));
+
+			rtcfg_brake_current = ((float)data[ind++]) / 10.0;
+
+			rtcfg_const_tiltback = ((float)(data[ind++] - 128)) / 10.0;
+			unsigned int speed_tb = ((float)(data[ind++]));
+			rtcfg_speed_tiltback_rate = 2 * ((float)(speed_tb & 0x1F)) / 100.0;
+			unsigned int speed_tb_max = speed_tb >> 5;
+			rtcfg_speed_tiltback_max = speed_tb_max > 0 ? ((float)(speed_tb_max)) / 2.0 : 0;
+
+			rtcfg_datareceived1 = true;
+			if ((rtcfg_startup_speed > 4.9) && (rtcfg_startup_speed < 90.1) &&
+				(rtcfg_const_tiltback > -10.1) && (rtcfg_const_tiltback < 10.1)) {
+				// set new startup speed
+				app_balance_runtime_config1(rtcfg_startup_speed, rtcfg_pitch_tolerance,
+											rtcfg_const_tiltback,
+											rtcfg_speed_tiltback_rate, rtcfg_speed_tiltback_max,
+											rtcfg_brake_current, flags);
+			}
+		}
+	} break;
+
+	case COMM_SURF_RTCONFIG2: {	// 194
+		int32_t ind = 0;
+
+		uint8_t magic_number = data[ind++];
+		if (magic_number == 100) {
+			bool buzz = is_buzzer_enabled();
+			uint8_t flags = data[ind++];
+			if (flags)
+				buzzer_enable(false);
+
+			rtcfg_kp = (float)data[ind++] / 4.0;
+			rtcfg_ki = (float)data[ind++] / 1000.0;
+			rtcfg_kd = (float)data[ind++] * 10.0;
+			rtcfg_ilimit = (float)data[ind++];
+			int boost_angle = data[ind++];
+			rtcfg_boost_amps = (float)data[ind++];
+			rtcfg_mahony_kp = (float)data[ind++] / 10;
+
+			// derived values
+			int boost_ramp = boost_angle & 0xF;
+			boost_angle = boost_angle >> 4;
+			rtcfg_boost_angle = (float)boost_angle / 2;
+			rtcfg_boost_ramp = (float)boost_ramp / 2;
+			app_balance_runtime_config2(rtcfg_kp, rtcfg_ki, rtcfg_kd, rtcfg_ilimit,
+										rtcfg_boost_angle, rtcfg_boost_ramp, rtcfg_boost_amps,
+										rtcfg_mahony_kp);
+
+			rtcfg_datareceived2 = true;
+
+			if (len > (uint32_t)ind + 2) {
+				rtcfg_atr_strength = (float)data[ind++] / 100;
+				rtcfg_atr_ttstrength = (float)data[ind++] / 100;
+				int atr_tiltdown = data[ind++];
+				// derived values
+				int atr_tiltup = atr_tiltdown & 0xF;
+				atr_tiltdown = atr_tiltdown >> 4;
+				rtcfg_atr_tiltdown = 10 * atr_tiltdown;
+				rtcfg_atr_tiltup = 10 * atr_tiltup;
+			}
+			if (len > (uint32_t)ind + 5) {
+				rtcfg_atr_boost = data[ind++];
+				rtcfg_atr_angle = data[ind++] * 10;
+				rtcfg_atr_speed1 = data[ind++];
+				rtcfg_atr_offset = (float)data[ind++] / 10;
+				rtcfg_atr_ratio = (float)data[ind++];
+				rtcfg_atr_filter = (float)data[ind++];
+				// derived values
+				rtcfg_atr_speed2 = (rtcfg_atr_speed1 & 0xF) + 1;
+				rtcfg_atr_speed1 = (rtcfg_atr_speed1 >> 4) + 1;
+			}
+
+				app_balance_runtime_config3(rtcfg_atr_strength, rtcfg_atr_ttstrength, rtcfg_atr_boost,
+											rtcfg_atr_angle, rtcfg_atr_tiltdown, rtcfg_atr_tiltup,
+											rtcfg_atr_speed1, rtcfg_atr_speed2, rtcfg_atr_offset,
+											rtcfg_atr_ratio, rtcfg_atr_filter);
+			if (buzz)
+				buzzer_enable(true);
+		}
+	} break;
+
+	case COMM_SURF_START_MICROLOG: {	// 196
+		int32_t ind = 0;
+		uint8_t magic_number = data[ind++];
+		if (magic_number == 100) {
+			uint8_t log_duration = data[ind++];
+			uint8_t log_mode = data[ind++];
+			if ((log_duration > 0) && (log_duration <= 60)) {
+				app_balance_start_microlog(log_duration, log_mode);
+			}
+		}
+	} break;
+
+	case COMM_SURF_STOP_MICROLOG: {	// 197 Abort current microlog
+		app_balance_stop_microlog();
+	} break;
+
+		/*case COMM_SURF_CONFIG_ABC: {	// 198
+		int32_t ind = 0;
+		uint8_t magic_number = data[ind++];
+		if (magic_number == 100) {
+			uint8_t buzz_disable = data[ind++];
+			uint8_t abc_intensity = data[ind++];
+			uint8_t abc_sustain = data[ind++];
+			rtcfg_abc_intensity = abc_intensity;
+			rtcfg_abc_sustain = abc_sustain;
+			rtcfg_abc_datareceived = true;
+
+			// instantly enable/disable buzzer
+			buzzer_enable(!buzz_disable);
+			// set new startup speed
+			app_balance_config_abc(rtcfg_abc_intensity, rtcfg_abc_sustain);
+		}
+	} break;
+		*/
+	case COMM_SURF_RCMOVE: {	// 199
+		int32_t ind = 0;
+		uint8_t magic_number = data[ind++];
+		if (magic_number == 111) {
+			uint8_t direction = data[ind++];
+			if (direction == 2) {
+				app_balance_flywheel_toggle();
+			}
+			else {
+				int current = data[ind++];
+				int time = data[ind++];
+				int sum = data[ind++];
+				if (sum != time+current) {
+					current = 0;
+				}
+				else if (direction == 0) {
+					current = -current;
+				}
+				app_balance_move(current, time);
+			}
+		}
+	} break;
+
+	case COMM_SURF_LOCK: {
+		int32_t ind = 0;
+		bool lock = data[ind++];
+		app_configuration *appconf = mempools_alloc_appconf();
+		*appconf = *app_get_configuration();
+		appconf->app_balance_conf.multi_esc = lock;
+		conf_general_store_app_configuration(appconf);
+		mempools_free_appconf(appconf);
 	} break;
 
 	// Blocking commands. Only one of them runs at any given time, in their

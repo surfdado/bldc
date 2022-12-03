@@ -603,7 +603,7 @@ void app_balance_runtime_config2(float kp, float ki, float kd, float i_limit,
 	rtki = ki;
 	angular_rate_kp = kd / 1500 * 0.6;
 	rti_limit = i_limit;
-	ahrs_update_kp(mahony_kp);
+	imu_update_kp(mahony_kp);
 	if (boost_ramp > 1) {
 		/*booster_factor_acc = boost_amps;
 		booster_angle_acc = boost_angle;

@@ -181,8 +181,8 @@ void imu_reset_orientation(void) {
 	ahrs_init_attitude_info(&m_att);
 	ahrs_init_attitude_info(&m_att_ref);
 	FusionAhrsInitialise(&m_fusionAhrs, 10.0, 1.0);
-	ahrs_update_all_parameters(&m_att, 1.0, 0.3, 0.0, 0.1);
-	ahrs_update_all_parameters(&m_att, 0.1, 0.3, 0.0, 0.1);
+	ahrs_update_all_parameters(&m_att, 1.0, 10.0, 0.0, 2.0);
+	ahrs_update_all_parameters(&m_att_ref, 1.0, 10.0, 0.0, 2.0);
 }
 
 i2c_bb_state *imu_get_i2c(void) {
@@ -520,6 +520,12 @@ static void imu_read_callback(float *accel, float *gyro, float *mag) {
 				m_settings.mahony_kp,
 				m_settings.mahony_ki,
 				m_settings.madgwick_beta);
+		ahrs_update_all_parameters(
+				&m_att_ref,
+				0.1,
+				0.3,
+				0,
+				0.3);
 
 		FusionAhrsSetGain(&m_fusionAhrs, m_settings.madgwick_beta);
 		FusionAhrsSetAccConfDecay(&m_fusionAhrs, m_settings.accel_confidence_decay);
@@ -706,3 +712,8 @@ static void terminal_imu_type_internal(int argc, const char **argv) {
 	(void)argc;(void)argv;
 	commands_printf(m_imu_type_internal);
 }
+
+void imu_update_kp(float kp) {
+	m_att.kp = kp;
+}
+
