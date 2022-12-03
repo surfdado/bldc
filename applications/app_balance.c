@@ -213,8 +213,8 @@ static bool use_reverse_stop, runtime_reverse_stop;
 static float pid_brake_increment;
 
 // Micro-Logging
-float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
-float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
+__attribute__((section(".ram4"))) float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
+__attribute__((section(".ram4"))) float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
 char ssstate[LOGBUFSIZE];
 float b0, b1, b2, b3, b4, b5, b6, b7, b8, b9;
 float logtimer;

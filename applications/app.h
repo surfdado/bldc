@@ -22,7 +22,7 @@
 
 #include "conf_general.h"
 
-#define LOGBUFSIZE 200
+#define LOGBUFSIZE 1000
 #define SURF_CUSTOM_VERSION 1
 
 extern bool is_floatpackage_running;
