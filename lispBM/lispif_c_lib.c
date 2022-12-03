@@ -240,6 +240,22 @@ static bool get_gpio(VESC_PIN io, stm32_gpio_t **port, uint32_t *pin, bool *is_a
 		res = true;
 #endif
 		break;
+	case VESC_PIN_GPIOB12:
+		*port = GPIOB; *pin = 12;
+		res = true;
+		break;
+	case VESC_PIN_GPIOC5:
+		*port = GPIOC; *pin = 5;
+		res = true;
+		break;
+	case VESC_PIN_GPIOC14:
+		*port = GPIOA; *pin = 14;
+		res = true;
+		break;
+	case VESC_PIN_GPIOC15:
+		*port = GPIOA; *pin = 15;
+		res = true;
+		break;
 	}
 
 	return res;

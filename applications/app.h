@@ -22,12 +22,17 @@
 
 #include "conf_general.h"
 
+#define LOGBUFSIZE 200
+#define SURF_CUSTOM_VERSION 1
+
 // Functions
 const app_configuration* app_get_configuration(void);
 void app_set_configuration(app_configuration *conf);
 void app_disable_output(int time_ms);
 bool app_is_output_disabled(void);
 unsigned app_calc_crc(app_configuration* conf);
+bool app_is_balance(void);
+bool app_is_running(void);
 
 // Standard apps
 void app_ppm_start(void);
@@ -88,6 +93,23 @@ float app_balance_get_adc1(void);
 float app_balance_get_adc2(void);
 float app_balance_get_debug1(void);
 float app_balance_get_debug2(void);
+
+// Surfdado Extensions
+void app_balance_atr_toggle(void);
+void app_balance_flywheel_toggle(void);
+void app_balance_runtime_config1(float startup_speed, float pitch_tolerance,
+								 float const_tiltback, float speed_tb_rate, float speed_tb_max,
+								 float brake_current, int flags);
+void app_balance_runtime_config2(float kp, float ki, float kd, float i_limit, float boost_angle, float boost_ramp, float boost_amps, float mahony_kp);
+void app_balance_runtime_config3(float atr_strength, float atr_ttstrength, float atr_boost,
+								 float atr_angle, float atr_tiltdown, float atr_tiltup,
+								 float atr_speed1, float atr_speed2, float atr_offset,
+								 float atr_ratio, float atr_filter);
+
+void app_balance_config_abc(float intensity, float sustain_ms);
+void app_balance_move(int amps, int time);
+void app_balance_start_microlog(int duration, int mode);
+void app_balance_stop_microlog(void);
 
 void app_pas_start(bool is_primary_output);
 void app_pas_stop(void);
