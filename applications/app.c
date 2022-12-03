@@ -28,12 +28,14 @@
 #include "crc.h"
 #include "servo_simple.h"
 #include "servo_dec.h"
+#include "buzzer.h"
 
 // Private variables
 static app_configuration appconf = {0};
 static virtual_timer_t output_vt = {0};
 static bool output_vt_init_done = false;
 static volatile bool output_disabled_now = false;
+static bool boot_done = false;
 
 // Private functions
 static void output_vt_cb(void *arg);
@@ -78,12 +80,19 @@ void app_set_configuration(app_configuration *conf) {
 	comm_can_set_baud(conf->can_baud_rate);
 #endif
 
-	imu_init(&conf->imu_conf);
+	if (boot_done)
+		// this is a subsequent call, do the imu init now
+		imu_init(&conf->imu_conf);
+	else
+		boot_done = true;
+
+	buzzer_enable(appconf.servo_out_enable);
 
 	// Configure balance app before starting it.
 	app_balance_configure(&appconf.app_balance_conf, &appconf.imu_conf);
 
 	if (app_changed) {
+#if 0 // servo is used as a buzzer!
 		if (appconf.app_to_use != APP_PPM &&
 				appconf.app_to_use != APP_PPM_UART &&
 				appconf.servo_out_enable) {
@@ -92,6 +101,7 @@ void app_set_configuration(app_configuration *conf) {
 		} else {
 			servo_simple_stop();
 		}
+#endif
 
 		switch (appconf.app_to_use) {
 		case APP_PPM:
