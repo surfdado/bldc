@@ -283,6 +283,11 @@ void mc_interface_select_motor_thread(int motor) {
 #endif
 }
 
+void mc_interface_set_erpmlimit(float lim) {
+	m_motor_1.m_conf.l_max_erpm = lim;
+	m_motor_1.m_conf.l_min_erpm = -lim;
+}
+
 /**
  * Get the motor selected for the current thread.
  *
