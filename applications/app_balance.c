@@ -2557,3 +2557,6 @@ void do_remotecontrol()
 		brake();
 	}
 }
+
+void app_balance_set_custom_cfg(uint8_t *data) { }
+int  app_balance_get_custom_cfg(uint8_t *data) { return 0; }

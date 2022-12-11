@@ -123,5 +123,7 @@ void app_pas_set_current_sub_scaling(float current_sub_scaling);
 void app_custom_start(void);
 void app_custom_stop(void);
 void app_custom_configure(app_configuration *conf);
+void app_balance_set_custom_cfg(uint8_t *data);
+int  app_balance_get_custom_cfg(uint8_t *data);
 
 #endif /* APP_H_ */
