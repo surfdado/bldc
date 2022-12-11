@@ -138,7 +138,7 @@ static float acceleration, last_erpm;
 static float accel_gap;
 static float accelhist[ACCEL_ARRAY_SIZE];
 static float accelavg;
-static float tt_accel_factor;
+static float tt_accel_factor, tt_decel_factor;
 static Biquad rp_biquad_lowpass;
 static int erpm_sign;
 static int accelidx;
@@ -316,7 +316,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	rtkp = balance_conf.kp;
 	rtki = balance_conf.ki;
 	rtkd = balance_conf.kd;
-	rti_limit = balance_conf.deadzone * 10;
+	rti_limit = balance_conf.ki_limit;
 	rt_mahony = imu_conf.mahony_kp;
 
 	max_duty_with_margin = mc_interface_get_configuration()->l_max_duty - 0.1;
@@ -387,7 +387,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	Fc = balance_conf.yaw_ki / balance_conf.hertz;
 	biquad_config(&rp_biquad_lowpass, BQ_LOWPASS, Fc);
 
-	angular_rate_kp = balance_conf.yaw_kp;
+	angular_rate_kp = balance_conf.kp2;
 	if (angular_rate_kp >= 3) {
 		// optimized angular P
 		angular_rate_kp -= 3;
@@ -404,7 +404,15 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Feature: ATR:
 	tt_accel_factor = fmaxf(5, balance_conf.yaw_kd);	// how many amps per acc?
-	tt_accel_factor = fminf(30, tt_accel_factor);
+	tt_accel_factor = fminf(20, tt_accel_factor);
+	tt_decel_factor = fmaxf(5, balance_conf.yaw_kp);	// how many amps per acc?
+	tt_decel_factor = fminf(20, tt_decel_factor);
+	if (balance_conf.yaw_kp < 5) {
+		tt_decel_factor = 10;
+	}
+	if (balance_conf.yaw_kd < 5) {
+		tt_accel_factor = 12;
+	}
 
 	og_tt_strength = 0;
 	if (app_get_configuration()->app_nrf_conf.address[0] == 99) {
@@ -647,6 +655,7 @@ void app_balance_runtime_config3(float rtatr_strength, float rtatr_ttstrength, f
 		//filter
 		//angle
 		tt_accel_factor = rtatr_ratio;
+		//tt_decel_factor = rtatr_ratio;
 		torquetilt_on_step_size = rtatr_speed1 / balance_conf.hertz;
 		torquetilt_off_step_size = rtatr_speed2 / balance_conf.hertz;
 	}
@@ -1367,7 +1376,6 @@ static void apply_torquetilt(void){
 	int torque_sign = SIGN(torquetilt_filtered_current);
 	float abs_torque = fabsf(torquetilt_filtered_current);
 	float torque_offset = balance_conf.torquetilt_start_current;
-	float accel_factor2 = tt_accel_factor * 1.3;
 	float step_size;
 
 	if ((abs_erpm > 250) && (torque_sign != SIGN(erpm))) {
@@ -1449,12 +1457,15 @@ static void apply_torquetilt(void){
 
 		// expected acceleration is proportional to current (minus an offset, required to balance/maintain speed)
 		//XXXXXfloat expected_acc;
+		float accel_factor = braking ? tt_decel_factor : tt_accel_factor;
+		float accel_factor2 = tt_accel_factor * 1.3;
+		
 		if (abs_torque < 25) {
-			expected_acc = (torquetilt_filtered_current - SIGN(erpm) * torque_offset) / tt_accel_factor;
+			expected_acc = (torquetilt_filtered_current - SIGN(erpm) * torque_offset) / accel_factor;
 		}
 		else {
 			// primitive linear approximation of non-linear torque-accel relationship
-			expected_acc = (torque_sign * 25 - SIGN(erpm) * torque_offset) / tt_accel_factor;
+			expected_acc = (torque_sign * 25 - SIGN(erpm) * torque_offset) / accel_factor;
 			expected_acc += torque_sign * (abs_torque - 25) / accel_factor2;
 		}
 
