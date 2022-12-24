@@ -23,6 +23,9 @@
 #ifdef LFOC_IS_V3_1
   #define HW_NAME                 "Little_FOCer_V3_1"
   #define LFOC_IS_V3
+#elif defined(LFOC_IS_V3_IGOR)
+  #define HW_NAME                 "Little_FOCer_V3_Igor"
+  #define LFOC_IS_V3
 #elif defined(LFOC_IS_V3)
   #define HW_NAME                 "Little_FOCer_V3"
 #elif defined(LFOC_IS_V1)
@@ -39,11 +42,14 @@
 #define HW_HAS_3_SHUNTS
 
 #ifdef LFOC_IS_V3
+#ifndef LFOC_IS_V3_IGOR
 #define HW_HAS_PHASE_FILTERS
 #define PHASE_FILTER_GPIO       GPIOC
 #define PHASE_FILTER_PIN        13
 #define PHASE_FILTER_ON()       palSetPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
 #define PHASE_FILTER_OFF()      palClearPad(PHASE_FILTER_GPIO, PHASE_FILTER_PIN)
+#endif
+
 #define HW_DEAD_TIME_NSEC       660.0
 #endif
 
