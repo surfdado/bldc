@@ -74,6 +74,28 @@ void ledpwm_led_off(int led) {
 	led_values[led] = 0;
 }
 
+/**
+ * @brief	Fade LED from one intensity to the next (in 10ms steps)
+ */
+void ledpwm_fade(int led, float from, float to, int duration_ms) {
+	int step_ms = 10;
+	int time = step_ms;
+	float range = to - from;
+	
+	do {
+		float intensity = 100 * time / duration_ms;
+		if (intensity > 100) {
+			intensity = 100;
+		}
+		intensity = intensity / 100;
+		intensity = from + range * intensity;
+		ledpwm_set_intensity(led, intensity);
+		chThdSleepMilliseconds(step_ms);
+		time += step_ms;
+	}
+	while (time <= duration_ms);
+}
+
 /*
  * Call this function as fast as possible, with a deterministic rate.
  */

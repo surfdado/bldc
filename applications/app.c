@@ -237,3 +237,22 @@ unsigned app_calc_crc(app_configuration* conf) {
 	conf->crc = crc_old;
 	return crc_new;
 }
+
+/**
+ * Report whether the balance app is selected
+ */
+bool app_is_balance(void) {
+	return (appconf.app_to_use == APP_BALANCE);
+}
+
+/**
+ * Report whether the balance app is "running"
+ */
+bool app_is_running(void) {
+	if ((appconf.app_to_use == APP_BALANCE) &&
+		(app_balance_get_state() > 0) &&
+		(app_balance_get_state() < 5)) {
+		return true;
+	}
+	return false;
+}

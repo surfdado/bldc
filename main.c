@@ -120,29 +120,62 @@ static THD_FUNCTION(led_thread, arg) {
 		}
 
 		mc_fault_code fault = mc_interface_get_fault();
+#ifdef HW_HAS_DUAL_MOTORS
 		mc_interface_select_motor_thread(2);
 		mc_fault_code fault2 = mc_interface_get_fault();
 		mc_interface_select_motor_thread(1);
+#else
+		mc_fault_code fault2 = FAULT_CODE_NONE;
+#endif
+		if (fault == FAULT_CODE_BRK)
+			fault = FAULT_CODE_NONE;
+
 		if (fault != FAULT_CODE_NONE || fault2 != FAULT_CODE_NONE) {
+			ledpwm_set_intensity(LED_RED, 0.0);
+			ledpwm_set_intensity(LED_HW1, 0.0);
+			chThdSleepMilliseconds(1000);
+
 			for (int i = 0;i < (int)fault;i++) {
 				ledpwm_set_intensity(LED_RED, 1.0);
+				ledpwm_set_intensity(LED_HW1, 1.0);
 				chThdSleepMilliseconds(250);
 				ledpwm_set_intensity(LED_RED, 0.0);
+				ledpwm_set_intensity(LED_HW1, 0.0);
 				chThdSleepMilliseconds(250);
 			}
 
 			chThdSleepMilliseconds(500);
 
+#ifdef HW_HAS_DUAL_MOTORS
 			for (int i = 0;i < (int)fault2;i++) {
 				ledpwm_set_intensity(LED_RED, 1.0);
+				ledpwm_set_intensity(LED_HW1, 1.0);
 				chThdSleepMilliseconds(250);
 				ledpwm_set_intensity(LED_RED, 0.0);
+				ledpwm_set_intensity(LED_HW1, 0.0);
 				chThdSleepMilliseconds(250);
 			}
-
 			chThdSleepMilliseconds(500);
+#endif
 		} else {
 			ledpwm_set_intensity(LED_RED, 0.0);
+
+			if (app_is_balance() == false) {
+				ledpwm_set_intensity(LED_HW1, 0.8);
+				chThdSleepMilliseconds(100);
+				ledpwm_set_intensity(LED_HW1, 0.0);
+				chThdSleepMilliseconds(1900);
+			}
+			else {
+				if (app_is_running()) {
+					ledpwm_set_intensity(LED_HW1, 0.3);
+				}
+				else {
+					ledpwm_fade(LED_HW1, 1.0, 0.3, 250);
+					chThdSleepMilliseconds(500);
+					ledpwm_fade(LED_HW1, 0.3, 1.0, 250);
+				}
+			}
 		}
 
 		chThdSleepMilliseconds(10);
@@ -298,6 +331,10 @@ int main(void) {
 				HW_SPI_PORT_MISO, HW_SPI_PIN_MISO);
 		HW_PERMANENT_NRF_FAILED_HOOK();
 	}
+#endif
+
+#ifdef HAS_EXT_LED
+	EXT_LED_OFF();
 #endif
 
 	// Threads
