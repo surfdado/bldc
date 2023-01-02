@@ -457,6 +457,7 @@ static int lib_get_cfg_int(CFG_PARAM p) {
 
 static bool lib_set_cfg_float(CFG_PARAM p, float value) {
 	bool res = false;
+	bool changed_imu = 0;
 
 	mc_configuration *mcconf = (mc_configuration*)mc_interface_get_configuration();
 	int changed_mc = 0;
@@ -501,12 +502,29 @@ static bool lib_set_cfg_float(CFG_PARAM p, float value) {
 		default: break;
 	}
 
+	if (p > 100) {
+		// don't write configs back to persistent storage, just apply the change now
+		int pp = p - 100;
+		switch (pp) {
+		case CFG_PARAM_IMU_accel_confidence_decay: appconf->imu_conf.accel_confidence_decay = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_mahony_kp: appconf->imu_conf.mahony_kp = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_mahony_ki: appconf->imu_conf.mahony_ki = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_madgwick_beta: appconf->imu_conf.madgwick_beta = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_rot_roll: appconf->imu_conf.rot_roll = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_rot_pitch: appconf->imu_conf.rot_pitch = value; changed_imu = 1; res = true; break;
+		case CFG_PARAM_IMU_rot_yaw: appconf->imu_conf.rot_yaw = value; changed_imu = 1; res = true; break;
+		}
+	}
+
 	if (changed_mc > 0) {
 		commands_apply_mcconf_hw_limits(mcconf);
 	}
 
 	if (changed_app > 0) {
 		app_set_configuration(appconf);
+	}
+	else if (changed_imu > 0) {
+		imu_init(&appconf->imu_conf);
 	}
 
 	mempools_free_appconf(appconf);
