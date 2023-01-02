@@ -2042,6 +2042,22 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			if (buzz)
 				buzzer_enable(true);
 		}
+		if (magic_number == 101) {
+			uint8_t tune_command = data[ind++];
+			if ((tune_command == 2) && (len > 13)) {
+				data[ind] = len;
+				app_balance_runtime_tune(&data[ind]);
+			}
+			if (tune_command == 3)  {
+				app_balance_tune_defaults();
+			}
+			if (tune_command == 4) {
+				app_balance_store();
+			}
+			if (tune_command == 5) {
+				app_balance_restore();
+			}
+		}
 	} break;
 
 	case COMM_SURF_START_MICROLOG: {	// 196
