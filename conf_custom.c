@@ -85,11 +85,12 @@ void conf_custom_process_cmd(unsigned char *data, unsigned int len,
 			int32_t ind = 0;
 			send_buffer[ind++] = packet_id;
 			send_buffer[ind++] = conf_ind;
-			int32_t len_cfg;
+			int32_t len_cfg = m_get_cfg(send_buffer + ind, packet_id == COMM_GET_CUSTOM_CONFIG_DEFAULT);
+			/*int32_t len_cfg;
 			if (true || packet_id == COMM_GET_CUSTOM_CONFIG_DEFAULT)
 				len_cfg = m_get_cfg(send_buffer + ind, packet_id == COMM_GET_CUSTOM_CONFIG_DEFAULT);
 			else
-				len_cfg = app_balance_get_custom_cfg(send_buffer + ind);
+   			    len_cfg = app_balance_get_custom_cfg(send_buffer + ind);*/
 			ind += len_cfg;
 			reply_func(send_buffer, ind);
 			mempools_free_packet_buffer(send_buffer);

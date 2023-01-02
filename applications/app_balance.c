@@ -19,17 +19,19 @@
 
 #include "conf_general.h"
 
-#include "app.h"
-#include "buzzer.h"
 #include "ch.h" // ChibiOS
 #include "hal.h" // ChibiOS HAL
-#include "foc_math.h"
-#include "mc_interface.h" // Motor control functions
-#include "hw.h" // Pin mapping on this hardware
-#include "timeout.h" // To reset the timeout
+
+#include "app.h"
+#include "buzzer.h"
 #include "commands.h"
+#include "hw.h" // Pin mapping on this hardware
 #include "imu/imu.h"
 #include "imu/ahrs.h"
+#include "foc_math.h"
+#include "mc_interface.h" // Motor control functions
+#include "mempools.h"
+#include "timeout.h" // To reset the timeout
 #include "utils_math.h"
 #include "utils_sys.h"
 #include "datatypes.h"
@@ -131,8 +133,9 @@ static SwitchState switch_state;
 static float rtkp, rtki, rtkd, rti_limit, rtd_limit, rt_mahony;
 static float og_tt_target;
 static float og_tt_strength;
-static float tt_speedboost_intensity, tt_strength_uphill;
+static float tt_speedboost_intensity, tt_strength_uphill, tt_strength_downhill;
 static float tt_response_boost, tt_release_boost;
+static float atr_angle_limit;
 static float integral_tt_impact_uphill, integral_tt_impact_downhill;
 static float acceleration, last_erpm;
 static float accel_gap;
@@ -482,7 +485,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	if (tt_strength_uphill < 0)
 		tt_strength_uphill = 0;
 	// Downhill strength must be higher since downhill amps tend to be lower than uphill amps
-	//tt_strength_downhill = tt_strength_uphill * (1 + balance_conf.yaw_kp / 100);
+	tt_strength_downhill = tt_strength_uphill;// * (1 + balance_conf.yaw_kp / 100);
 
 	// Any value above 0 will increase the board angle to match the slope
 	integral_tt_impact_downhill = 0;//1.0 - (float)balance_conf.kd_biquad_lowpass / 100.0;
@@ -491,7 +494,9 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	integral_tt_impact_downhill = fmaxf(integral_tt_impact_downhill, 0.0);
 	integral_tt_impact_uphill = fminf(integral_tt_impact_uphill, 1.0);
 	integral_tt_impact_uphill = fmaxf(integral_tt_impact_uphill, 0.0);
-	
+
+	atr_angle_limit = balance_conf.torquetilt_angle_limit;
+
 	// Lingering nose tilt after braking
 	braketilt_factor = balance_conf.kd_pt1_highpass_frequency;
 	if (braketilt_factor > 0) {
@@ -571,6 +576,205 @@ void app_balance_stop_microlog()
 	logidx = -1;
 	buf[0][0] = 0;
 }
+
+static void split(unsigned char byte, int* h1, int* h2)
+{
+	*h1 = byte & 0xF;
+	*h2 = byte >> 4;
+}
+
+/**
+ * runtime_tune		Extract tune info from 20byte message but don't write to EEPROM!
+ */
+void app_balance_runtime_tune(unsigned char *cfg)
+{
+	int h1, h2;
+	split(cfg[0], &h1, &h2);
+	/*if (h1 + 15 > rtkp + 1) {
+		beep_alert(1, 1);
+		return;
+		}*/
+	rtkp = h1 + 15;
+	angular_rate_kp = ((float)h2) / 10;
+
+	if (rtkp == 21) {
+
+		beep_alert(2, 0);
+		
+	}
+	else
+		beep_alert(1, 0);
+
+	split(cfg[1], &h1, &h2);
+	rtki = h1;
+	if (h1 == 1)
+		rtki = 0.005;
+	else if (h1 > 1)
+		rtki = ((float)(h1 - 1)) / 100;
+	rti_limit = h2 + 20;
+
+	split(cfg[2], &h1, &h2);
+	//d->float_conf.booster_angle = h1 + 5;
+	//d->float_conf.booster_ramp = h2 + 2;
+
+	split(cfg[3], &h1, &h2);
+	/*if (h1 == 0)
+		d->float_conf.booster_current = 0;
+	else
+	d->float_conf.booster_current = 18 + h1 * 2;*/
+	turntilt_strength = h2;
+
+	split(cfg[4], &h1, &h2);
+	//d->float_conf.turntilt_angle_limit = (h1 & 0x3) + 2;
+	//d->float_conf.turntilt_start_erpm = (float)(h1 >> 2) * 500 + 1000;
+	rt_mahony = ((float)h2) / 10 + 1.5;
+
+	split(cfg[5], &h1, &h2);
+	if (h1 == 0)
+		tt_strength_uphill = 0;
+	else
+		tt_strength_uphill = ((float)h1) / 10.0 + 0.9;
+	if (h2 == 0)
+		tt_strength_downhill = 0;
+	else
+		tt_strength_downhill = ((float)h2) / 10.0 + 0.9;
+
+	split(cfg[6], &h1, &h2);
+	//d->float_conf.atr_torque_offset = h1 + 5;
+	//d->float_conf.atr_speed_boost = ((float)(h2 * 5)) / 100;
+
+	split(cfg[7], &h1, &h2);
+	atr_angle_limit = h1 + 5;
+	//balance_conf.torquetilt_on_speed = (h2 & 0x3) + 3;
+	//balance_conf.torquetilt_off_speed = (h2 >> 2) + 2;
+	//torquetilt_on_step_size = balance_conf.torquetilt_on_speed / balance_conf.hertz;
+	//torquetilt_off_step_size = balance_conf.torquetilt_off_speed / balance_conf.hertz;
+
+	split(cfg[8], &h1, &h2);
+	tt_response_boost = ((float)h1) / 10 + 1;
+	tt_release_boost = ((float)h2) / 5 + 1;
+
+	split(cfg[9], &h1, &h2);
+	//d->float_conf.atr_amps_accel_ratio = h1 + 5;
+	//d->float_conf.atr_amps_decel_ratio = h2 + 5;
+
+	split(cfg[10], &h1, &h2);
+	braketilt_factor = h1;
+	brakestep_modifier = h2;
+	// Lingering nose tilt after braking
+	if (braketilt_factor > 0) {
+		braketilt_factor = 20 - braketilt_factor;
+		if (braketilt_factor < 0) {
+			braketilt_factor = 5;
+		}
+		// factor is always negative!!!
+		braketilt_factor = -(0.5 + braketilt_factor / 5.0);
+	}
+	if (brakestep_modifier == 0) {
+		brakestep_modifier = 1;
+	}
+
+	split(cfg[11], &h1, &h2);
+	mc_current_max = h1 * 5 + 55;
+	mc_current_min = h2 * 5 + 55;
+	if (h1 == 0) mc_current_max = mc_interface_get_configuration()->l_current_max;
+	if (h2 == 0) mc_current_min = fabsf(mc_interface_get_configuration()->l_current_min);
+}
+
+void app_balance_store()
+{
+	if (state <= RUNNING_FLYWHEEL) {
+		beep_alert(3, 1);
+		return;
+	}
+	beep_alert(1, 0);
+
+	app_configuration *appconf = mempools_alloc_appconf();
+	*appconf = *app_get_configuration();
+	appconf->app_balance_conf.kp = rtkp;
+	appconf->app_balance_conf.ki = rtki;
+	appconf->app_balance_conf.ki_limit = rti_limit;
+	appconf->app_balance_conf.kp2 = angular_rate_kp;
+	appconf->app_balance_conf.turntilt_strength = turntilt_strength;
+	appconf->app_balance_conf.torquetilt_strength = tt_strength_uphill;
+	appconf->imu_conf.mahony_kp = rt_mahony;
+	/*
+	//d->float_conf.booster_angle = APPCONF_FLOAT_BOOSTER_ANGLE;
+	//d->float_conf.booster_ramp = APPCONF_FLOAT_BOOSTER_RAMP;
+	//d->float_conf.booster_current = APPCONF_FLOAT_BOOSTER_CURRENT;
+
+	d->float_conf.turntilt_angle_limit = APPCONF_FLOAT_TURNTILT_ANGLE_LIMIT;
+	d->float_conf.turntilt_start_angle = APPCONF_FLOAT_TURNTILT_START_ANGLE;
+	d->float_conf.turntilt_start_erpm = APPCONF_FLOAT_TURNTILT_START_ERPM;
+	d->float_conf.turntilt_speed = APPCONF_FLOAT_TURNTILT_SPEED;
+	d->float_conf.turntilt_erpm_boost = APPCONF_FLOAT_TURNTILT_ERPM_BOOST;
+	d->float_conf.turntilt_erpm_boost_end = APPCONF_FLOAT_TURNTILT_ERPM_BOOST_END;
+	d->float_conf.turntilt_yaw_aggregate = APPCONF_FLOAT_TURNTILT_YAW_AGGREGATE;
+
+	d->float_conf.atr_strength_up = APPCONF_FLOAT_ATR_UPHILL_STRENGTH;
+	d->float_conf.atr_strength_down = APPCONF_FLOAT_ATR_DOWNHILL_STRENGTH;
+
+	d->float_conf.atr_torque_offset = APPCONF_FLOAT_ATR_TORQUE_OFFSET;
+	d->float_conf.atr_speed_boost = APPCONF_FLOAT_ATR_SPEED_BOOST;
+	d->float_conf.atr_angle_limit = APPCONF_FLOAT_ATR_ANGLE_LIMIT;
+	d->float_conf.atr_on_speed = APPCONF_FLOAT_ATR_ON_SPEED;
+	d->float_conf.atr_off_speed = APPCONF_FLOAT_ATR_OFF_SPEED;
+	d->float_conf.atr_response_boost = APPCONF_FLOAT_ATR_RESPONSE_BOOST;
+	d->float_conf.atr_transition_boost = APPCONF_FLOAT_ATR_TRANSITION_BOOST;
+	d->float_conf.atr_filter = APPCONF_FLOAT_ATR_FILTER;
+	d->float_conf.atr_amps_accel_ratio = APPCONF_FLOAT_ATR_AMPS_ACCEL_RATIO;
+	d->float_conf.atr_amps_decel_ratio = APPCONF_FLOAT_ATR_AMPS_DECEL_RATIO;
+	d->float_conf.braketilt_strength = APPCONF_FLOAT_BRAKETILT_STRENGTH;
+	d->float_conf.braketilt_lingering = APPCONF_FLOAT_BRAKETILT_LINGERING;*/
+
+	conf_general_store_app_configuration(appconf);
+	mempools_free_appconf(appconf);
+}
+
+void app_balance_restore()
+{
+	if (state <= RUNNING_FLYWHEEL) {
+		beep_alert(3, 1);
+		return;
+	}
+	beep_alert(2, 0);
+}
+
+void app_balance_tune_defaults()
+{
+	beep_alert(3, 0);
+	/*	rtkp = APPCONF_FLOAT_KP;
+	angular_rate_kp = APPCONF_FLOAT_KP2;
+	rtki = APPCONF_FLOAT_KI;
+	d->float_conf.mahony_kp = APPCONF_FLOAT_MAHONY_KP;
+	rti_limit = APPCONF_FLOAT_KI_LIMIT;
+	//d->float_conf.booster_angle = APPCONF_FLOAT_BOOSTER_ANGLE;
+	//d->float_conf.booster_ramp = APPCONF_FLOAT_BOOSTER_RAMP;
+	//d->float_conf.booster_current = APPCONF_FLOAT_BOOSTER_CURRENT;
+	turntilt_strength = APPCONF_FLOAT_TURNTILT_STRENGTH;
+	d->float_conf.turntilt_angle_limit = APPCONF_FLOAT_TURNTILT_ANGLE_LIMIT;
+	d->float_conf.turntilt_start_angle = APPCONF_FLOAT_TURNTILT_START_ANGLE;
+	d->float_conf.turntilt_start_erpm = APPCONF_FLOAT_TURNTILT_START_ERPM;
+	d->float_conf.turntilt_speed = APPCONF_FLOAT_TURNTILT_SPEED;
+	d->float_conf.turntilt_erpm_boost = APPCONF_FLOAT_TURNTILT_ERPM_BOOST;
+	d->float_conf.turntilt_erpm_boost_end = APPCONF_FLOAT_TURNTILT_ERPM_BOOST_END;
+	d->float_conf.turntilt_yaw_aggregate = APPCONF_FLOAT_TURNTILT_YAW_AGGREGATE;
+	d->float_conf.atr_strength_up = APPCONF_FLOAT_ATR_UPHILL_STRENGTH;
+	d->float_conf.atr_strength_down = APPCONF_FLOAT_ATR_DOWNHILL_STRENGTH;
+	d->float_conf.atr_torque_offset = APPCONF_FLOAT_ATR_TORQUE_OFFSET;
+	d->float_conf.atr_speed_boost = APPCONF_FLOAT_ATR_SPEED_BOOST;
+	d->float_conf.atr_angle_limit = APPCONF_FLOAT_ATR_ANGLE_LIMIT;
+	d->float_conf.atr_on_speed = APPCONF_FLOAT_ATR_ON_SPEED;
+	d->float_conf.atr_off_speed = APPCONF_FLOAT_ATR_OFF_SPEED;
+	d->float_conf.atr_response_boost = APPCONF_FLOAT_ATR_RESPONSE_BOOST;
+	d->float_conf.atr_transition_boost = APPCONF_FLOAT_ATR_TRANSITION_BOOST;
+	d->float_conf.atr_filter = APPCONF_FLOAT_ATR_FILTER;
+	d->float_conf.atr_amps_accel_ratio = APPCONF_FLOAT_ATR_AMPS_ACCEL_RATIO;
+	d->float_conf.atr_amps_decel_ratio = APPCONF_FLOAT_ATR_AMPS_DECEL_RATIO;
+	d->float_conf.braketilt_strength = APPCONF_FLOAT_BRAKETILT_STRENGTH;
+	d->float_conf.braketilt_lingering = APPCONF_FLOAT_BRAKETILT_LINGERING;*/
+}
+
 
 void app_balance_runtime_config1(float startup_speed, float pitch_tolerance,
 								 float const_tiltback, float speed_tb_rate, float speed_tb_max,
@@ -1595,13 +1799,13 @@ static void apply_torquetilt(void){
 			}
 			new_ttt += torquetilt_booster;
 			if (balance_conf.kd > 0) {
-				beep_alert(1, 0);
+				//beep_alert(1, 0);
 			}
 		}*/
 
 		torquetilt_target = torquetilt_target * 0.95 + 0.05 * new_ttt;
-		torquetilt_target = fminf(torquetilt_target, balance_conf.torquetilt_angle_limit);
-		torquetilt_target = fmaxf(torquetilt_target, -balance_conf.torquetilt_angle_limit);
+		torquetilt_target = fminf(torquetilt_target, atr_angle_limit);
+		torquetilt_target = fmaxf(torquetilt_target, -atr_angle_limit);
 
 		float response_boost = 1;
 		if (abs_erpm > 2500) {
@@ -2126,7 +2330,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					new_pid_value += pid_angular_rate;
 
 					if (balance_conf.booster_current > 0) {
-						//ahrs_update_kp(rt_mahony);
+						//imu_update_kp(rt_mahony);
 					}
 
 					// Booster is implemented by lowering mahony kp:

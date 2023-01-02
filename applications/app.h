@@ -112,6 +112,10 @@ void app_balance_config_abc(float intensity, float sustain_ms);
 void app_balance_move(int amps, int time);
 void app_balance_start_microlog(int duration, int mode);
 void app_balance_stop_microlog(void);
+void app_balance_runtime_tune(unsigned char *cfg);
+void app_balance_store(void);
+void app_balance_restore(void);
+void app_balance_tune_defaults(void);
 
 void app_pas_start(bool is_primary_output);
 void app_pas_stop(void);
