@@ -250,3 +250,12 @@ void hw_try_restore_i2c(void) {
         i2cReleaseBus(&HW_I2C_DEV);
     }
 }
+
+#ifdef LFOC_IS_V3
+void button_led_init(void) {
+	// External/Button LED
+	palSetPadMode(BUTTON_LED_1_GPIO,BUTTON_LED_1_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	LED_PWM1_ON();
+	return;
+}
+#endif
