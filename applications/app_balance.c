@@ -809,7 +809,7 @@ void app_balance_runtime_config1(float startup_speed, float pitch_tolerance,
 		runtime_reverse_stop = false;
 	}
 
-	beep_alert(1,0);
+	//beep_alert(1,0);
 }
 
 void app_balance_runtime_config2(float kp, float ki, float kd, float i_limit,
@@ -845,7 +845,7 @@ void app_balance_runtime_config2(float kp, float ki, float kd, float i_limit,
 		booster_angle_acc = boost_angle;
 		booster_ramp_acc = boost_ramp;*/
 	}
-	beep_alert(2, 0);
+	//beep_alert(2, 0);
 }
 
 void app_balance_runtime_config3(float rtatr_strength, float rtatr_ttstrength, float rtatr_boost,
@@ -857,19 +857,19 @@ void app_balance_runtime_config3(float rtatr_strength, float rtatr_ttstrength, f
 		// we are riding, don't accept extreme changes
 	}
 	if (rtatr_strength > 0.3) {
-		beep_alert(1, 1);
+		//beep_alert(1, 1);
 		return;
 	}
 	if (rtatr_ttstrength > 0.3) {
-		beep_alert(1, 1);
+		//beep_alert(1, 1);
 		return;
 	}
 	if ((rtatr_tiltdown > 100) || (rtatr_tiltup > 100)) {
-		beep_alert(1, 1);
+		//beep_alert(1, 1);
 		return;
 	}
 	if (rtatr_boost > 50) {
-		beep_alert(1, 1);
+		//beep_alert(1, 1);
 		return;
 	}
 	tt_strength_uphill = rtatr_strength;
@@ -907,7 +907,7 @@ void app_balance_atr_toggle()
 		atr_disable = (balance_conf.torquetilt_filter == 0);
 		turntilt_strength = balance_conf.turntilt_strength;
 	}
-	beep_alert(1, 0);
+	//beep_alert(1, 0);
 	is_atr_suppressed = !is_atr_suppressed;
 }
 
@@ -917,7 +917,7 @@ void app_balance_flywheel_toggle()
 	if (state >= FAULT_ANGLE_PITCH) {
 		is_flywheel_mode = !is_flywheel_mode;
 		if (is_flywheel_mode) {
-			beep_alert(1, 0);
+			//beep_alert(1, 0);
 			flywheel_timer = current_time;
 
 			// Change IMU Orientation and set Mahony kp to 0.3:
@@ -1008,7 +1008,7 @@ void app_balance_move(int amps, int time)
 			rc_steps = time * 100;
 			rc_current_target = amps / 10.0;
 			if (rc_current_target > 8) {
-				beep_alert(1, 1);
+				//beep_alert(1, 1);
 				rc_current_target = 2;
 			}
 		}
@@ -1136,7 +1136,7 @@ static void reset_vars(void){
 
 	// Did I do something stupid?
 	if (!is_flywheel_mode && (mc_interface_get_configuration()->l_max_erpm <= 10000))
-		beep_alert(6, 0);
+	{}//beep_alert(6, 0);
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -1440,7 +1440,7 @@ static void calculate_setpoint_target(void){
 		setpointAdjustmentType = TILTBACK_DUTY;
 		state = RUNNING_TILTBACK;
 	}else if(GET_INPUT_VOLTAGE() > balance_conf.tiltback_hv){
-		beep_alert(3, 0);	// Triple-beep
+		//beep_alert(3, 0);	// Triple-beep
 		if ((ST2MS(current_time - tb_highvoltage_timer) > 500) ||
 			(GET_INPUT_VOLTAGE() > balance_conf.tiltback_hv + 1)) {
 			// 500ms have passed or voltage is another volt higher, time for some tiltback
@@ -1459,7 +1459,7 @@ static void calculate_setpoint_target(void){
 		}
 	}else if(mc_interface_temp_fet_filtered() > mc_max_temp_fet){
 		// Use the angle from Low-Voltage tiltback, but slower speed from High-Voltage tiltback
-		beep_alert(3, 1);	// Triple-beep (long beeps)
+		//beep_alert(3, 1);	// Triple-beep (long beeps)
 		if(mc_interface_temp_fet_filtered() > (mc_max_temp_fet + 1)) {
 			if(erpm > 0){
 				setpoint_target = balance_conf.tiltback_lv_angle;
@@ -1476,7 +1476,7 @@ static void calculate_setpoint_target(void){
 		}
 	}else if(mc_interface_temp_motor_filtered() > mc_max_temp_mot){
 		// Use the angle from Low-Voltage tiltback, but slower speed from High-Voltage tiltback
-		beep_alert(3, 1);	// Triple-beep (long beeps)
+		//beep_alert(3, 1);	// Triple-beep (long beeps)
 		if(mc_interface_temp_motor_filtered() > (mc_max_temp_mot + 1)) {
 			if(erpm > 0){
 				setpoint_target = balance_conf.tiltback_lv_angle;
@@ -1492,7 +1492,7 @@ static void calculate_setpoint_target(void){
 			state = RUNNING;
 		}
 	}else if(GET_INPUT_VOLTAGE() < balance_conf.tiltback_lv){
-		beep_alert(3, 0);	// Triple-beep
+		//beep_alert(3, 0);	// Triple-beep
 		float abs_motor_current = fabsf(motor_current);
 		float vdelta = balance_conf.tiltback_lv - GET_INPUT_VOLTAGE();
 		float ratio = vdelta * 20 / abs_motor_current;
@@ -1650,7 +1650,7 @@ static void apply_torquetilt(void){
 		else {
 			if (ST2MS(current_time - wheelslip_end_timer) < 100) {
 				// for 100ms after wheelslip we still don't do ATR to allow the wheel to decelerate
-				if (balance_conf.yaw_current_clamp > 1) beep_alert(1, 0);
+				if (balance_conf.yaw_current_clamp > 1) {}//beep_alert(1, 0);
 				torquetilt_interpolated *= 0.998;
 				torquetilt_target *= 0.999;
 				braketilt_interpolated *= 0.998;
@@ -1660,7 +1660,7 @@ static void apply_torquetilt(void){
 			}
 			else if ((fabsf(acceleration) > 10) && (abs_erpm > 1000)) {
 				if (balance_conf.yaw_current_clamp > 0) {
-					if (balance_conf.yaw_current_clamp > 1) beep_alert(1, 0);
+					if (balance_conf.yaw_current_clamp > 1) {}//beep_alert(1, 0);
 					torquetilt_interpolated *= 0.998;
 					torquetilt_target *= 0.999;
 					braketilt_interpolated *= 0.998;
@@ -2197,7 +2197,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					float threshold = balance_conf.tiltback_lv + 5;
 					if (bat_volts < threshold) {
 						int beeps = (int)fminf(6, threshold - bat_volts);
-						beep_alert(beeps, true);
+						//beep_alert(beeps, true);
 					}
 				}
 				break;
@@ -2354,7 +2354,7 @@ static THD_FUNCTION(balance_thread, arg) {
 						}
 						new_mahony = imu_conf.mahony_kp * (1 - scale * mahony_reduction);
 						if ((new_mahony > 2.2) || (new_mahony < 1.4)) {
-							beep_alert(2,0);
+							//beep_alert(2,0);
 							new_mahony = 2.0;
 						}
 					}
@@ -2395,14 +2395,14 @@ static THD_FUNCTION(balance_thread, arg) {
 							reverse_current_limit = 0;
 							if (balance_conf.kd_pt1_lowpass_frequency > 1)
 								new_pid_value = reverse_current_limit;
-							beep_alert(1, 1);
+							//beep_alert(1, 1);
 						}
 						else {
 							reverse_current_limit = - mc_current_min * (ttmax - torquetilt_target) / ttmax;
 							if (balance_conf.kd_pt1_lowpass_frequency > 1)
 								new_pid_value = fmaxf(new_pid_value, reverse_current_limit);
 							if (reverse_current_limit > (new_pid_value + 10))
-								beep_alert(1, 0);
+								//beep_alert(1, 0);
 						}
 					}
 					else if ((torquetilt_target  < -3) && (erpm > 0) && (new_pid_value > 0)) {
@@ -2411,14 +2411,14 @@ static THD_FUNCTION(balance_thread, arg) {
 							reverse_current_limit = 0;
 							if (balance_conf.kd_pt1_lowpass_frequency > 2)
 								new_pid_value = reverse_current_limit;
-							beep_alert(1, 1);
+							//beep_alert(1, 1);
 						}
 						else {
 							reverse_current_limit = mc_current_max * (ttmax - torquetilt_target) / ttmax;
 							if (balance_conf.kd_pt1_lowpass_frequency > 1)
 								new_pid_value = fmaxf(new_pid_value, reverse_current_limit);
 							if (reverse_current_limit < (new_pid_value - 10))
-								beep_alert(1, 0);
+								//beep_alert(1, 0);
 						}
 					}
 					}*/
@@ -2477,7 +2477,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				if (ST2S(current_time - disengage_timer) > 10) {
 					// 10 seconds of grace period between flipping the board over and allowing darkride mode...
 					if (is_upside_down) {
-						beep_alert(1, 1);
+						//beep_alert(1, 1);
 					}
 					enable_upside_down = false;
 					is_upside_down = false;
@@ -2509,7 +2509,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				if (!is_locked && (!is_flywheel_mode || (ST2MS(current_time - flywheel_timer) > 2000))) {
 					if (is_flywheel_mode && (config_fault_adc1 > 0)) {
 						// set this with a 2second delay so the board doesn't activate during IMU recalibration!
-						beep_alert(1, 0);
+						//beep_alert(1, 0);
 						config_fault_adc1 = 0;
 						config_fault_adc2 = 0;
 					}
@@ -2656,7 +2656,7 @@ static THD_FUNCTION(balance_thread, arg) {
 							buf[8][0] = rtd_limit;//angular_rate_kp;
 						}
 						logidx++;
-						beep_alert(2, 0);
+						//beep_alert(2, 0);
 					}
 					buf[0][logidx] = b0 / logperiod;
 					buf[1][logidx] = b1 / logperiod;
@@ -2676,7 +2676,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					logidx++;
 					b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 = 0;
 					if (logidx == LOGBUFSIZE)
-						beep_alert(2, 0);
+					{}	//beep_alert(2, 0);
 				}
 			}
 		}
@@ -2737,10 +2737,10 @@ static void check_lock() {
 			// Only lock if nrf channel is set to '99'
 			commands_balance_lock(is_locked);	// store to flash (in balance_conf.multi_esc)
 			if (is_locked) {
-				beep_alert(2, 1);	// beeeep-beeeep
+				//beep_alert(2, 1);	// beeeep-beeeep
 			}
 			else {
-				beep_alert(3, 0);	// beep-beep-beep
+				//beep_alert(3, 0);	// beep-beep-beep
 			}
 		}
 		
@@ -2770,7 +2770,7 @@ void check_odometer()
 				conf_general_store_backup_data();
 				odometer = mc_interface_get_odometer();
 				odometer_dirty = 0;
-				beep_alert(1, 0);
+				//beep_alert(1, 0);
 			}
 		}
 	}
