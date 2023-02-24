@@ -621,7 +621,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, balance_true_pitch /*mc_interface_read_reset_avg_vd()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {
-			buffer_append_float32(send_buffer, foc_get_fw_current_now() /*mc_interface_read_reset_avg_vq()*/, 1e3, &ind);
+			buffer_append_float32(send_buffer, mc_interface_get_fw_current_now() /*mc_interface_read_reset_avg_vq()*/, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 21)) {
 			uint8_t status = 0;
@@ -1097,7 +1097,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = val.num_vescs;
 		}
 		if (mask & ((uint32_t)1 << 19)) {
-			buffer_append_float32(send_buffer, foc_get_fw_current_now(), 1e3, &ind);
+			buffer_append_float32(send_buffer, mc_interface_get_fw_current_now(), 1e3, &ind);
 			//buffer_append_float32(send_buffer, wh_batt_left, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {

@@ -1248,6 +1248,16 @@ float mc_interface_get_tot_current_in_filtered(void) {
 	return ret;
 }
 
+float mc_interface_get_fw_current_now(void) {
+	float ret = 0.0;
+
+	if (motor_now()->m_conf.motor_type == MOTOR_TYPE_FOC) {
+		ret = mcpwm_foc_get_tot_current_in_filtered();
+	}
+
+	return ret;
+}
+
 float mc_interface_get_input_voltage_filtered(void) {
 	return motor_now()->m_input_voltage_filtered;
 }

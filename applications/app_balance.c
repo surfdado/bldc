@@ -2584,7 +2584,7 @@ static THD_FUNCTION(balance_thread, arg) {
 					b2 += pid_integral;
 					b3 += GET_INPUT_VOLTAGE();
 					b4 += pid_prop;
-					b5 += foc_get_fw_current_now();
+					b5 += mc_interface_get_fw_current_now();
 					b6 += erpm;
 					b7 += setpoint;
 					b8 += pid_value;
