@@ -21,11 +21,6 @@
 #include "utils_math.h"
 #include <math.h>
 
-float fw_current_now = 0.0;
-float foc_get_fw_current_now() {
-	return fw_current_now;
-}
-
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
 void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
 		float dt, observer_state *state, float *phase, motor_all_state_t *motor) {
@@ -658,7 +653,7 @@ void foc_run_fw(motor_all_state_t *motor, float dt) {
 					motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE ||
 					motor->m_control_mode == CONTROL_MODE_SPEED ||
 					motor->m_i_fw_set > motor->m_conf->cc_min_current)) {
-		fw_current_now = 0.0;
+		float fw_current_now = 0.0;
 		float duty_abs = motor->m_duty_abs_filtered;
 
 		if (motor->m_conf->foc_fw_duty_start < 0.99 &&

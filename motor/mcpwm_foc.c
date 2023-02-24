@@ -1163,6 +1163,17 @@ float mcpwm_foc_get_tot_current_filtered(void) {
 }
 
 /**
+ * Get the field weakening current applied currently.
+ *
+ * @return
+ * The field weakening current.
+ */
+float mcpwm_foc_get_fw_current_now(void) {
+	volatile motor_all_state_t *motor = get_motor_now();
+	return motor->m_i_fw_set;
+}
+
+/**
  * Get the magnitude of the motor current, which includes both the
  * D and Q axis.
  *
