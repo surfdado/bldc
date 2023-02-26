@@ -128,4 +128,12 @@ void app_custom_configure(app_configuration *conf);
 void app_balance_set_custom_cfg(uint8_t *data);
 int  app_balance_get_custom_cfg(uint8_t *data);
 
+// Micrologs
+void mlog_resetlog(void);
+int mlog_getbufsize(void);
+void mlog_writebuf(int chan, int idx, float value);
+float mlog_readbuf(int chan, int idx);
+void mlog_writestate(int idx, char state);
+char mlog_readstate(int idx);
+
 #endif /* APP_H_ */
