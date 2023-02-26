@@ -596,6 +596,14 @@ typedef struct {
 	void (*foc_set_openloop_phase)(float current, float phase);
 	void (*foc_set_openloop_duty)(float dutyCycle, float rpm);
 	void (*foc_set_openloop_duty_phase)(float dutyCycle, float phase);
+
+	// Micrologs
+	void (*mlog_resetlog)(void);
+	int (*mlog_getbufsize)(void);
+	void (*mlog_writebuf)(int chan, int idx, float value);
+	float (*mlog_readbuf)(int chan, int idx);
+	void (*mlog_writestate)(int idx, char state);
+	char (*mlog_readstate)(int idx);
 } vesc_c_if;
 
 typedef struct {

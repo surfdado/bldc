@@ -213,14 +213,59 @@ static bool use_reverse_stop, runtime_reverse_stop;
 static float pid_brake_increment;
 
 // Micro-Logging
-__attribute__((section(".ram4"))) float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
-__attribute__((section(".ram4"))) float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
-char ssstate[LOGBUFSIZE];
+__attribute__((section(".ram4"))) float buf[10][LOGBUFSIZE];
+unsigned char ssstate[LOGBUFSIZE];
 float b0, b1, b2, b3, b4, b5, b6, b7, b8, b9;
-float logtimer;
 int logperiod, logdelaycounter;
 int logidx;
 int logmode;
+
+void mlog_resetlog()
+{
+	commands_reset_logidx();
+	buf[0][0] = 0;
+	buf[1][0] = 0;
+	buf[2][0] = 0;
+	buf[3][0] = 0;
+	buf[4][0] = 0;
+	buf[5][0] = 0;
+	buf[6][0] = 0;
+	buf[7][0] = 0;
+	buf[8][0] = 0;
+	buf[9][0] = 0;
+	ssstate[0] = 0;
+}
+
+int mlog_getbufsize(void)
+{
+	return LOGBUFSIZE;
+}
+
+void mlog_writebuf(int chan, int idx, float value)
+{
+	buf[chan][idx] = value;
+}
+
+float mlog_readbuf(int chan, int idx)
+{
+	if (idx < LOGBUFSIZE)
+		return buf[chan][idx];
+	else
+		return 0;
+}
+
+void mlog_writestate(int idx, char state)
+{
+	ssstate[idx] = state;
+}
+
+char mlog_readstate(int idx)
+{
+	if (idx < LOGBUFSIZE)
+		return ssstate[idx];
+	else
+		return 0;
+}
 
 // Microlog
 extern int lsm_filter;
@@ -501,21 +546,11 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 
 	// Micro-Logging
 	logidx = -1;
-	buf0[0] = 0;
-	buf1[0] = 0;
-	buf2[0] = 0;
-	buf3[0] = 0;
-	buf4[0] = 0;
-	buf5[0] = 0;
-	buf6[0] = 0;
-	buf7[0] = 0;
-	buf8[0] = 0;
-	buf9[0] = 0;
-	ssstate[0] = 0;
-	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 =0;
+	mlog_resetlog();
+	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 = 0;
 	logdelaycounter = 0;
 	logmode = app_get_configuration()->controller_id;
-	commands_reset_logidx();
+
 	show_revision = true;
 }
 
@@ -523,20 +558,9 @@ void app_balance_start_microlog(int duration, int mode)
 {
 	// Micro-Logging
 	logidx = 0;
-	buf0[0] = 0;
-	buf1[0] = 0;
-	buf2[0] = 0;
-	buf3[0] = 0;
-	buf4[0] = 0;
-	buf5[0] = 0;
-	buf6[0] = 0;
-	buf7[0] = 0;
-	buf8[0] = 0;
-	buf9[0] = 0;
-	ssstate[0] = 0;
-	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 =0;
+	mlog_resetlog();
+	b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = b8 = b9 = 0;
 	logdelaycounter = 0;
-	commands_reset_logidx();
 	// log period in ms matches duration in seconds (we collect 1000 samples)
 	logperiod = duration;
 	logmode = mode;
@@ -545,7 +569,7 @@ void app_balance_start_microlog(int duration, int mode)
 void app_balance_stop_microlog()
 {
 	logidx = -1;
-	buf0[0] = 0;
+	buf[0][0] = 0;
 }
 
 void app_balance_runtime_config1(float startup_speed, float pitch_tolerance,
@@ -2404,42 +2428,42 @@ static THD_FUNCTION(balance_thread, arg) {
 					logdelaycounter = 0;
 
 					if (logidx == 0) {
-						buf0[0] = 5555;
-						buf1[0] = 5555;
-						buf2[0] = og_tt_strength;
-						buf3[0] = balance_conf.torquetilt_start_current;//bump_correction_intensity;
-						buf4[0] = tt_strength_uphill;
-						buf5[0] = braketilt_factor;//mc_current_min;//lsm_filter;
-						buf6[0] = logperiod;
-						buf7[0] = 111;	// 101 = PID details
-						buf8[0] = balance_conf.torquetilt_strength;//correction_sustain_duration;
-						buf9[0] = LOGBUFSIZE;
+						buf[0][0] = 5555;
+						buf[1][0] = 5555;
+						buf[2][0] = og_tt_strength;
+						buf[3][0] = balance_conf.torquetilt_start_current;//bump_correction_intensity;
+						buf[4][0] = tt_strength_uphill;
+						buf[5][0] = braketilt_factor;//mc_current_min;//lsm_filter;
+						buf[6][0] = logperiod;
+						buf[7][0] = 111;	// 101 = PID details
+						buf[8][0] = balance_conf.torquetilt_strength;//correction_sustain_duration;
+						buf[9][0] = LOGBUFSIZE;
 
 						if (logmode == 9) {
-							buf2[0] = rtkp;
-							buf3[0] = angular_rate_kp;
-							buf4[0] = booster_factor_acc;
-							buf8[0] = booster_factor_brk;
+							buf[2][0] = rtkp;
+							buf[3][0] = angular_rate_kp;
+							buf[4][0] = booster_factor_acc;
+							buf[8][0] = booster_factor_brk;
 						}
 						else if (logmode != 10) {
-							buf2[0] = rtkp;
-							buf3[0] = rtki;
-							buf4[0] = rti_limit;
-							buf8[0] = rtd_limit;//angular_rate_kp;
+							buf[2][0] = rtkp;
+							buf[3][0] = rtki;
+							buf[4][0] = rti_limit;
+							buf[8][0] = rtd_limit;//angular_rate_kp;
 						}
 						logidx++;
 						beep_alert(2, 0);
 					}
-					buf0[logidx] = b0 / logperiod;
-					buf1[logidx] = b1 / logperiod;
-					buf2[logidx] = b2 / logperiod;
-					buf3[logidx] = b3 / logperiod;
-					buf4[logidx] = b4 / logperiod;
-					buf5[logidx] = b5 / logperiod;
-					buf6[logidx] = b6 / logperiod;
-					buf7[logidx] = b7 / logperiod;
-					buf8[logidx] = b8 / logperiod;
-					buf9[logidx] = b9 / logperiod;
+					buf[0][logidx] = b0 / logperiod;
+					buf[1][logidx] = b1 / logperiod;
+					buf[2][logidx] = b2 / logperiod;
+					buf[3][logidx] = b3 / logperiod;
+					buf[4][logidx] = b4 / logperiod;
+					buf[5][logidx] = b5 / logperiod;
+					buf[6][logidx] = b6 / logperiod;
+					buf[7][logidx] = b7 / logperiod;
+					buf[8][logidx] = b8 / logperiod;
+					buf[9][logidx] = b9 / logperiod;
 					ssstate[logidx] = state;
 					if (traction_control)// && (state < 6))
 						ssstate[logidx] += 100;

@@ -132,9 +132,8 @@ static int nrf_flags = 0;
 
 extern int log_balance_state;
 extern float balance_setpoint, balance_atr, balance_carve, balance_true_pitch;
-extern float buf0[LOGBUFSIZE], buf1[LOGBUFSIZE], buf2[LOGBUFSIZE], buf3[LOGBUFSIZE], buf4[LOGBUFSIZE];
-extern float buf5[LOGBUFSIZE], buf6[LOGBUFSIZE], buf7[LOGBUFSIZE], buf8[LOGBUFSIZE], buf9[LOGBUFSIZE];
-extern char ssstate[LOGBUFSIZE];
+extern float buf[10][LOGBUFSIZE];
+extern unsigned char ssstate[LOGBUFSIZE];
 static int logidx;
 
 void commands_reset_logidx() {
@@ -512,20 +511,20 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float32(send_buffer, mc_interface_read_reset_avg_motor_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 3)) {
-			if (buf1[0] == 5555)
+			if (buf[1][0] == 5555)
 				buffer_append_float16(send_buffer, logidx, 1e0, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_read_reset_avg_input_current(), 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 4)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf0[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[0][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, balance_atr/*mc_interface_read_reset_avg_id()*/, 1e2, &ind);
 		}
 		if (mask & ((uint32_t)1 << 5)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf1[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[1][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, balance_carve/*mc_interface_read_reset_avg_iq()*/, 1e2, &ind);
 		}
@@ -533,55 +532,55 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			buffer_append_float16(send_buffer, mc_interface_get_duty_cycle_now(), 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 7)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf2[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[2][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_get_rpm(), 1e0, &ind);
 		}
 		if (mask & ((uint32_t)1 << 8)) {
-			if (buf1[0] == 5555) {
-				buffer_append_float32(send_buffer, buf3[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555) {
+				buffer_append_float32(send_buffer, buf[3][logidx], 1e2, &ind);
 			}
 			else
 				buffer_append_float16(send_buffer, mc_interface_get_input_voltage_filtered(), 1e1, &ind);
 		}
 		if (mask & ((uint32_t)1 << 9)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf4[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[4][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_get_amp_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 10)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf5[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[5][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_get_amp_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 11)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf6[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[6][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_get_watt_hours(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 12)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf7[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[7][logidx], 1e2, &ind);
 			else
 				buffer_append_float32(send_buffer, mc_interface_get_watt_hours_charged(false), 1e4, &ind);
 		}
 		if (mask & ((uint32_t)1 << 13)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf8[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[8][logidx], 1e2, &ind);
 			else
 				buffer_append_int32(send_buffer, mc_interface_get_tachometer_value(false), &ind);
 		}
 		if (mask & ((uint32_t)1 << 14)) {
-			if (buf1[0] == 5555)
-				buffer_append_float32(send_buffer, buf9[logidx], 1e2, &ind);
+			if (buf[1][0] == 5555)
+				buffer_append_float32(send_buffer, buf[9][logidx], 1e2, &ind);
 			else
 				buffer_append_int32(send_buffer, mc_interface_get_tachometer_abs_value(false), &ind);
 
-			if (buf1[0] == 5555) {
+			if (buf[1][0] == 5555) {
 				if (logidx < LOGBUFSIZE-1)
 					logidx++;
 				else
@@ -589,7 +588,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			}
 		}
 		if (mask & ((uint32_t)1 << 15)) {
-			if (buf1[0] == 5555)
+			if (buf[1][0] == 5555)
 				send_buffer[ind++] = ssstate[logidx];
 			else
 				send_buffer[ind++] = mc_interface_get_fault();
