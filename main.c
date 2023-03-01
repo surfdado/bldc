@@ -167,7 +167,7 @@ static THD_FUNCTION(led_thread, arg) {
 				chThdSleepMilliseconds(1900);
 			}
 			else {
-				if (app_is_running()) {
+				if (app_is_running() || (fabsf(mc_interface_get_rpm()) > 100)) {
 					ledpwm_set_intensity(LED_HW1, 0.3);
 				}
 				else {

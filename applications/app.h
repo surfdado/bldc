@@ -25,6 +25,8 @@
 #define LOGBUFSIZE 200
 #define SURF_CUSTOM_VERSION 1
 
+extern bool is_floatpackage_running;
+
 // Functions
 const app_configuration* app_get_configuration(void);
 void app_set_configuration(app_configuration *conf);
