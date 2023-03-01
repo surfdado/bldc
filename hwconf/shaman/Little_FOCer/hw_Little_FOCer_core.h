@@ -34,6 +34,8 @@
   #error "Must define hardware type"
 #endif
 
+void button_led_init(void);
+
 // HW properties
 #if !defined(LFOC_IS_V3)
 #define HW_HAS_DRV8323S

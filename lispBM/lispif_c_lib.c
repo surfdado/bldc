@@ -114,6 +114,10 @@ static lib_thread lib_spawn(void (*func)(void*), size_t stack_size, char *name, 
 				lib_running_threads[lib_running_threads_cnt++] = thd;
 			}
 
+			if (!strcmp(name, "Float Main")) {
+				is_floatpackage_running = true;
+			}
+			
 			return (lib_thread)thd;
 		}
 	}

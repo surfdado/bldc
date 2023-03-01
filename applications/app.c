@@ -30,6 +30,9 @@
 #include "servo_dec.h"
 #include "buzzer.h"
 
+// Global variables
+bool is_floatpackage_running = false;
+
 // Private variables
 static app_configuration appconf = {0};
 static virtual_timer_t output_vt = {0};
@@ -242,7 +245,7 @@ unsigned app_calc_crc(app_configuration* conf) {
  * Report whether the balance app is selected
  */
 bool app_is_balance(void) {
-	return (appconf.app_to_use == APP_BALANCE);
+	return ((appconf.app_to_use == APP_BALANCE) || is_floatpackage_running);
 }
 
 /**
