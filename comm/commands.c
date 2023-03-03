@@ -939,6 +939,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			appdata_func(data, len);
 		}
 #ifdef USE_LISPBM
+		if (!is_floatpackage_running && (len > 2)) {
+			unsigned char magicnr = data[0];
+			if (magicnr == 101) {
+				is_floatpackage_running = true;
+			}
+		}
+		
 		lispif_process_custom_app_data(data, len);
 #endif
 		break;
