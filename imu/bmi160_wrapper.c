@@ -61,10 +61,15 @@ static bool reset_init_bmi(BMI_STATE *s) {
 
 	bmi160_init(&(s->sensor));
 
-	s->sensor.accel_cfg.range = BMI160_ACCEL_RANGE_16G;
+	if(s->filter == IMU_FILTER_HIGH){
+		s->sensor.accel_cfg.range = BMI160_ACCEL_RANGE_8G;
+		s->sensor.gyro_cfg.range = BMI160_GYRO_RANGE_1000_DPS;
+	}
+	else {
+		s->sensor.accel_cfg.range = BMI160_ACCEL_RANGE_16G;
+		s->sensor.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
+	}	
 	s->sensor.accel_cfg.power = BMI160_ACCEL_NORMAL_MODE;
-
-	s->sensor.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
 	s->sensor.gyro_cfg.power = BMI160_GYRO_NORMAL_MODE;
 
 	if(s->rate_hz <= 25){
@@ -96,13 +101,15 @@ static bool reset_init_bmi(BMI_STATE *s) {
 	}else if(s->filter == IMU_FILTER_MEDIUM){
 		s->sensor.accel_cfg.bw = BMI160_ACCEL_BW_OSR2_AVG2;
 		s->sensor.gyro_cfg.bw = BMI160_GYRO_BW_OSR2_MODE;
-		s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 1, BMI160_ACCEL_ODR_1600HZ);
-		s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 1, BMI160_GYRO_ODR_3200HZ);
+		//s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 1, BMI160_ACCEL_ODR_1600HZ);
+		//s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 1, BMI160_GYRO_ODR_3200HZ);
 	}else if(s->filter == IMU_FILTER_HIGH){
+		//s->sensor.accel_cfg.bw = BMI160_ACCEL_BW_OSR2_AVG2;
+		//s->sensor.gyro_cfg.bw = BMI160_GYRO_BW_OSR2_MODE;
 		s->sensor.accel_cfg.bw = BMI160_ACCEL_BW_OSR4_AVG1;
 		s->sensor.gyro_cfg.bw = BMI160_GYRO_BW_OSR4_MODE;
-		s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 2, BMI160_ACCEL_ODR_1600HZ);
-		s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 2, BMI160_GYRO_ODR_3200HZ);
+		s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 1, BMI160_ACCEL_ODR_1600HZ);
+		s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 1, BMI160_GYRO_ODR_3200HZ);
 	}
 
 	chThdSleepMilliseconds(50);
@@ -140,13 +147,24 @@ static THD_FUNCTION(bmi_thread, arg) {
 
 		float tmp_accel[3], tmp_gyro[3], tmp_mag[3];
 
-		tmp_accel[0] = (float)accel.x * 16.0 / 32768.0;
-		tmp_accel[1] = (float)accel.y * 16.0 / 32768.0;
-		tmp_accel[2] = (float)accel.z * 16.0 / 32768.0;
+		if(s->filter == IMU_FILTER_HIGH){
+			tmp_accel[0] = (float)accel.x * 8.0 / 32768.0;
+			tmp_accel[1] = (float)accel.y * 8.0 / 32768.0;
+			tmp_accel[2] = (float)accel.z * 8.0 / 32768.0;
 
-		tmp_gyro[0] = (float)gyro.x * 2000.0 / 32768.0;
-		tmp_gyro[1] = (float)gyro.y * 2000.0 / 32768.0;
-		tmp_gyro[2] = (float)gyro.z * 2000.0 / 32768.0;
+			tmp_gyro[0] = (float)gyro.x * 1000.0 / 32768.0;
+			tmp_gyro[1] = (float)gyro.y * 1000.0 / 32768.0;
+			tmp_gyro[2] = (float)gyro.z * 1000.0 / 32768.0;
+		}
+		else {
+			tmp_accel[0] = (float)accel.x * 16.0 / 32768.0;
+			tmp_accel[1] = (float)accel.y * 16.0 / 32768.0;
+			tmp_accel[2] = (float)accel.z * 16.0 / 32768.0;
+
+			tmp_gyro[0] = (float)gyro.x * 2000.0 / 32768.0;
+			tmp_gyro[1] = (float)gyro.y * 2000.0 / 32768.0;
+			tmp_gyro[2] = (float)gyro.z * 2000.0 / 32768.0;
+		}
 
 		memset(tmp_mag, 0, sizeof(tmp_mag));
 
