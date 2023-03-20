@@ -1097,7 +1097,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = val.num_vescs;
 		}
 		if (mask & ((uint32_t)1 << 19)) {
-			buffer_append_float32(send_buffer, mc_interface_get_fw_current_now(), 1e3, &ind);
+			buffer_append_float32(send_buffer, -mc_interface_read_reset_avg_id(), 1e3, &ind);
 			//buffer_append_float32(send_buffer, wh_batt_left, 1e3, &ind);
 		}
 		if (mask & ((uint32_t)1 << 20)) {
