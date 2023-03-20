@@ -506,13 +506,12 @@ static bool lib_set_cfg_float(CFG_PARAM p, float value) {
 		// don't write configs back to persistent storage, just apply the change now
 		int pp = p - 100;
 		switch (pp) {
+		case CFG_PARAM_l_min_erpm: mcconf->l_min_erpm = value; res = true; break;
+		case CFG_PARAM_l_max_erpm: mcconf->l_max_erpm = value; res = true; break;
 		case CFG_PARAM_IMU_accel_confidence_decay: appconf->imu_conf.accel_confidence_decay = value; changed_imu = 1; res = true; break;
 		case CFG_PARAM_IMU_mahony_kp: appconf->imu_conf.mahony_kp = value; changed_imu = 1; res = true; break;
 		case CFG_PARAM_IMU_mahony_ki: appconf->imu_conf.mahony_ki = value; changed_imu = 1; res = true; break;
 		case CFG_PARAM_IMU_madgwick_beta: appconf->imu_conf.madgwick_beta = value; changed_imu = 1; res = true; break;
-		case CFG_PARAM_IMU_rot_roll: appconf->imu_conf.rot_roll = value; changed_imu = 1; res = true; break;
-		case CFG_PARAM_IMU_rot_pitch: appconf->imu_conf.rot_pitch = value; changed_imu = 1; res = true; break;
-		case CFG_PARAM_IMU_rot_yaw: appconf->imu_conf.rot_yaw = value; changed_imu = 1; res = true; break;
 		}
 	}
 
