@@ -270,6 +270,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 	}
+	if (mc_interface_get_rpm() > 500) {
+		if ((packet_id == COMM_SET_MCCONF) ||
+			(packet_id == COMM_SET_APPCONF) ||
+			(packet_id == COMM_SET_APPCONF_NO_STORE)) {
+			return;
+		}
+	}
 
 	switch (packet_id) {
 	case COMM_FW_VERSION: {
