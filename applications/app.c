@@ -252,9 +252,6 @@ bool app_is_balance(void) {
  * Report whether the balance app is "running"
  */
 bool app_is_running(void) {
-	if (is_floatpackage_running) {
-		return true;
-	}
 	if ((appconf.app_to_use == APP_BALANCE) &&
 		(app_balance_get_state() > 0) &&
 		(app_balance_get_state() < 5)) {
