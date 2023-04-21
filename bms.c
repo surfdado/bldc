@@ -403,7 +403,7 @@ void bms_update_limits(float *i_in_min, float *i_in_max,
 
 	// SOC
 	float i_in_max_bms_soc = i_in_max_conf;
-	if ((m_conf.limit_mode >> 1) & 1) {
+	if (false) {//(m_conf.limit_mode >> 1) & 1) {
 		if (m_stat_soc_min.id >= 0) {
 			float soc = m_stat_soc_min.soc;
 
