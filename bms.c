@@ -354,7 +354,7 @@ void bms_update_limits(float *i_in_min, float *i_in_max,
 	// TODO: add support for conf->l_temp_accel_dec to still have braking.
 
 	// SOC
-	if ((m_conf.limit_mode >> 1) & 1) {
+	if (false) {//(m_conf.limit_mode >> 1) & 1) {
 		if (m_stat_soc_min.id >= 0 && UTILS_AGE_S(m_stat_soc_min.rx_time) < MAX_CAN_AGE_SEC) {
 			float soc = m_stat_soc_min.soc;
 
