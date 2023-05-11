@@ -114,7 +114,7 @@ static THD_FUNCTION(led_thread, arg) {
 		mc_state state2 = mc_interface_get_state();
 		mc_interface_select_motor_thread(1);
 		if ((state1 == MC_STATE_RUNNING) || (state2 == MC_STATE_RUNNING)) {
-			ledpwm_set_intensity(LED_GREEN, 0.5);
+			ledpwm_set_intensity(LED_GREEN, 0.4);
 		} else {
 			ledpwm_set_intensity(LED_GREEN, 0.2);
 		}
