@@ -270,11 +270,167 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 	}
-	if (mc_interface_get_rpm() > 500) {
-		if ((packet_id == COMM_SET_MCCONF) ||
-			(packet_id == COMM_SET_APPCONF) ||
-			(packet_id == COMM_SET_APPCONF_NO_STORE)) {
-			return;
+	if (fabsf(mc_interface_get_rpm()) > 100) {
+		switch (packet_id) {
+		  //case COMM_FW_VERSION = 0,
+			case COMM_JUMP_TO_BOOTLOADER:
+			case COMM_ERASE_NEW_APP:
+			case COMM_WRITE_NEW_APP_DATA:
+			  //case COMM_GET_VALUES:
+			  //case COMM_SET_DUTY:
+			  //case COMM_SET_CURRENT:
+			  //case COMM_SET_CURRENT_BRAKE:
+			  //case COMM_SET_RPM:
+			  //case COMM_SET_POS:
+			  //case COMM_SET_HANDBRAKE:
+			  //case COMM_SET_DETECT:
+			  //case COMM_SET_SERVO_POS:
+			case COMM_SET_MCCONF:
+			  //case COMM_GET_MCCONF:
+			  //case COMM_GET_MCCONF_DEFAULT:
+			case COMM_SET_APPCONF:
+			  //case COMM_GET_APPCONF:
+			  //case COMM_GET_APPCONF_DEFAULT:
+			  //case COMM_SAMPLE_PRINT:
+			  //case COMM_TERMINAL_CMD:
+			  //case COMM_PRINT:
+			case COMM_ROTOR_POSITION:
+			case COMM_EXPERIMENT_SAMPLE:
+			  //case COMM_DETECT_MOTOR_PARAM:
+			  //case COMM_DETECT_MOTOR_R_L:
+			  //case COMM_DETECT_MOTOR_FLUX_LINKAGE:
+			  //case COMM_DETECT_ENCODER:
+			  //case COMM_DETECT_HALL_FOC:
+			case COMM_REBOOT:
+			case COMM_ALIVE:
+			  //case COMM_GET_DECODED_PPM:
+			  //case COMM_GET_DECODED_ADC:
+			  //case COMM_GET_DECODED_CHUK:
+			  //case COMM_FORWARD_CAN:
+			  //case COMM_SET_CHUCK_DATA:
+			  //case COMM_CUSTOM_APP_DATA:
+			  //case COMM_NRF_START_PAIRING:
+			  //case COMM_GPD_SET_FSW:
+			  //case COMM_GPD_BUFFER_NOTIFY:
+			  //case COMM_GPD_BUFFER_SIZE_LEFT:
+			  //case COMM_GPD_FILL_BUFFER:
+			  //case COMM_GPD_OUTPUT_SAMPLE:
+			  //case COMM_GPD_SET_MODE:
+			  //case COMM_GPD_FILL_BUFFER_INT8:
+			  //case COMM_GPD_FILL_BUFFER_INT16:
+			  //case COMM_GPD_SET_BUFFER_INT_SCALE:
+			  //case COMM_GET_VALUES_SETUP:
+			case COMM_SET_MCCONF_TEMP:
+			case COMM_SET_MCCONF_TEMP_SETUP:
+			  //case COMM_GET_VALUES_SELECTIVE:
+			  //case COMM_GET_VALUES_SETUP_SELECTIVE:
+			  //case COMM_EXT_NRF_PRESENT:
+			  //case COMM_EXT_NRF_ESB_SET_CH_ADDR:
+			  //case COMM_EXT_NRF_ESB_SEND_DATA:
+			  //case COMM_EXT_NRF_ESB_RX_DATA:
+			  //case COMM_EXT_NRF_SET_ENABLED:
+			case COMM_DETECT_MOTOR_FLUX_LINKAGE_OPENLOOP:
+			case COMM_DETECT_APPLY_ALL_FOC:
+			case COMM_JUMP_TO_BOOTLOADER_ALL_CAN:
+			case COMM_ERASE_NEW_APP_ALL_CAN:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN:
+			  //case COMM_PING_CAN:
+			  //case COMM_APP_DISABLE_OUTPUT:
+			  //case COMM_TERMINAL_CMD_SYNC:
+			  //case COMM_GET_IMU_DATA:
+			  //case COMM_BM_CONNECT:
+			case COMM_BM_ERASE_FLASH_ALL:
+			case COMM_BM_WRITE_FLASH:
+			case COMM_BM_REBOOT:
+			case COMM_BM_DISCONNECT:
+			case COMM_BM_MAP_PINS_DEFAULT:
+			case COMM_BM_MAP_PINS_NRF5X:
+			case COMM_ERASE_BOOTLOADER:
+			case COMM_ERASE_BOOTLOADER_ALL_CAN:
+			  //case COMM_PLOT_INIT:
+			  //case COMM_PLOT_DATA:
+			  //case COMM_PLOT_ADD_GRAPH:
+			  //case COMM_PLOT_SET_GRAPH:
+			  //case COMM_GET_DECODED_BALANCE:
+			  //case COMM_BM_MEM_READ:
+			case COMM_WRITE_NEW_APP_DATA_LZO:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN_LZO:
+			case COMM_BM_WRITE_FLASH_LZO:
+			  //case COMM_SET_CURRENT_REL:
+			  //case COMM_CAN_FWD_FRAME:
+			  //case COMM_SET_BATTERY_CUT:
+			  //case COMM_SET_BLE_NAME:
+			  //case COMM_SET_BLE_PIN:
+			  //case COMM_SET_CAN_MODE:
+			  //case COMM_GET_IMU_CALIBRATION:
+			  //case COMM_GET_MCCONF_TEMP:
+			  //case COMM_GET_CUSTOM_CONFIG_XML:
+			  //case COMM_GET_CUSTOM_CONFIG:
+			  //case COMM_GET_CUSTOM_CONFIG_DEFAULT:
+			  //case COMM_SET_CUSTOM_CONFIG:
+			  //case COMM_BMS_GET_VALUES:
+			  //case COMM_BMS_SET_CHARGE_ALLOWED:
+			  //case COMM_BMS_SET_BALANCE_OVERRIDE:
+			  //case COMM_BMS_RESET_COUNTERS:
+			  //case COMM_BMS_FORCE_BALANCE:
+			  //case COMM_BMS_ZERO_CURRENT_OFFSET:
+			case COMM_JUMP_TO_BOOTLOADER_HW:
+			case COMM_ERASE_NEW_APP_HW:
+			case COMM_WRITE_NEW_APP_DATA_HW:
+			case COMM_ERASE_BOOTLOADER_HW:
+			case COMM_JUMP_TO_BOOTLOADER_ALL_CAN_HW:
+			case COMM_ERASE_NEW_APP_ALL_CAN_HW:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN_HW:
+			case COMM_ERASE_BOOTLOADER_ALL_CAN_HW:
+			  //case COMM_SET_ODOMETER:
+			  //case COMM_PSW_GET_STATUS:
+			  //case COMM_PSW_SWITCH:
+			  //case COMM_BMS_FWD_CAN_RX:
+			  //case COMM_BMS_HW_DATA:
+			  //case COMM_GET_BATTERY_CUT:
+			case COMM_BM_HALT_REQ:
+			  //case COMM_GET_QML_UI_HW:
+			  //case COMM_GET_QML_UI_APP:
+			  //case COMM_CUSTOM_HW_DATA:
+			case COMM_QMLUI_ERASE:
+			case COMM_QMLUI_WRITE:
+			  //case COMM_IO_BOARD_GET_ALL:
+			  //case COMM_IO_BOARD_SET_PWM:
+			  //case COMM_IO_BOARD_SET_DIGITAL:
+			case COMM_BM_MEM_WRITE:
+			case COMM_BMS_BLNC_SELFTEST:
+			  //case COMM_GET_EXT_HUM_TMP:
+			  //case COMM_GET_STATS:
+			  //case COMM_RESET_STATS:
+			  //case COMM_LISP_READ_CODE:
+			case COMM_LISP_WRITE_CODE:
+			case COMM_LISP_ERASE_CODE:
+			case COMM_LISP_SET_RUNNING:
+			  //case COMM_LISP_GET_STATS:
+			  //case COMM_LISP_PRINT:
+			  //case COMM_BMS_SET_BATT_TYPE:
+			  //case COMM_BMS_GET_BATT_TYPE:
+			  //case COMM_LISP_REPL_CMD:
+			  //case COMM_LISP_STREAM_CODE:
+			  //case COMM_FILE_LIST:
+			  //case COMM_FILE_READ:
+			  //case COMM_FILE_WRITE:
+			  //case COMM_FILE_MKDIR:
+			  //case COMM_FILE_REMOVE:
+			  //case COMM_LOG_START:
+			  //case COMM_LOG_STOP:
+			  //case COMM_LOG_CONFIG_FIELD:
+			  //case COMM_LOG_DATA_F32:
+			case COMM_SET_APPCONF_NO_STORE:
+			  //case COMM_GET_GNSS:
+			  //case COMM_LOG_DATA_F64:
+			  //case COMM_LOCK_SETPIN:
+		       	  //case COMM_WRITE_LOCK:
+			  //case COMM_LOCK_STATUS:
+
+			  return; // reject command while motor is running
+
+			default: ;// do nothing
 		}
 	}
 
