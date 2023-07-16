@@ -75,10 +75,18 @@ void button_led_init(void);
 #define LED_RED_OFF()           palClearPad(GPIOB, 1)
 
 #ifdef LFOC_IS_V3
-#define BUTTON_LED_1_GPIO GPIOB
-#define BUTTON_LED_1_PIN  12
-#define LED_PWM1_ON()			palSetPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
-#define LED_PWM1_OFF()			palClearPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
+#define BUTTON_LED_R_GPIO GPIOC
+#define BUTTON_LED_R_PIN  14
+#define BUTTON_LED_G_GPIO GPIOB
+#define BUTTON_LED_G_PIN  12
+#define BUTTON_LED_B_GPIO GPIOC
+#define BUTTON_LED_B_PIN  15
+#define LED_PWM1_ON()			palClearPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM1_OFF()			palSetPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM2_ON()			palClearPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM2_OFF()			palSetPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM3_ON()			palClearPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
+#define LED_PWM3_OFF()			palSetPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
 
 #define HW_EARLY_INIT()			button_led_init();
 #endif

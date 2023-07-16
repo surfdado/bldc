@@ -53,6 +53,12 @@ void hw_init_gpio(void) {
     palSetPadMode(GPIOB, 1,
             PAL_MODE_OUTPUT_PUSHPULL |
             PAL_STM32_OSPEED_HIGHEST);
+    palSetPadMode(GPIOB, 12,
+            PAL_MODE_OUTPUT_PUSHPULL |
+            PAL_STM32_OSPEED_HIGHEST);
+    palSetPadMode(GPIOC, 14,
+            PAL_MODE_OUTPUT_PUSHPULL |
+            PAL_STM32_OSPEED_HIGHEST);
 
     // ENABLE_GATE
     palSetPadMode(GPIOB, 5,
@@ -254,8 +260,12 @@ void hw_try_restore_i2c(void) {
 #ifdef LFOC_IS_V3
 void button_led_init(void) {
 	// External/Button LED
-	palSetPadMode(BUTTON_LED_1_GPIO,BUTTON_LED_1_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palSetPadMode(BUTTON_LED_R_GPIO,BUTTON_LED_R_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palSetPadMode(BUTTON_LED_G_GPIO,BUTTON_LED_G_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palSetPadMode(BUTTON_LED_B_GPIO,BUTTON_LED_B_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
 	LED_PWM1_ON();
+	LED_PWM2_ON();
+	LED_PWM3_ON();
 	return;
 }
 #endif
