@@ -45,6 +45,12 @@
 #define LED_RED_ON()			palSetPad(GPIOB, 1)
 #define LED_RED_OFF()			palClearPad(GPIOB, 1)
 
+#define BUTTON_LED_1_GPIO GPIOB
+#define BUTTON_LED_1_PIN  12
+#define LED_PWM1_ON()                  palSetPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
+#define LED_PWM1_OFF()                 palClearPad(BUTTON_LED_1_GPIO, BUTTON_LED_1_PIN)
+#define HW_EARLY_INIT()                 button_led_init();
+
 #define CURRENT_FILTER_ON()		palSetPad(GPIOD, 2)
 #define CURRENT_FILTER_OFF()	palClearPad(GPIOD, 2)
 
