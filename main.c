@@ -161,20 +161,42 @@ static THD_FUNCTION(led_thread, arg) {
 			ledpwm_set_intensity(LED_RED, 0.0);
 
 			if (app_is_balance() == false) {
+				ledpwm_set_intensity(LED_HW2, 0);
 				ledpwm_set_intensity(LED_HW1, 0.8);
 				chThdSleepMilliseconds(100);
 				ledpwm_set_intensity(LED_HW1, 0.0);
 				chThdSleepMilliseconds(1900);
 			}
 			else {
-				if (app_is_running() || (fabsf(mc_interface_get_rpm()) > 100)) {
-					ledpwm_set_intensity(LED_HW1, 0.3);
+				if (fabsf(mc_interface_get_rpm()) > 500) {
+					if (mc_interface_get_battery_level(NULL) > 0.3) {
+						// Green
+						ledpwm_set_intensity(LED_HW1, 0.25);
+						ledpwm_set_intensity(LED_HW2, 0);
+					} else if (mc_interface_get_battery_level(NULL) > 0.1) {
+						// Yellow
+						ledpwm_set_intensity(LED_HW1, 0.4);
+						ledpwm_set_intensity(LED_HW2, 0.4);
+					} else {
+						// Red
+						ledpwm_set_intensity(LED_HW1, 0);
+						ledpwm_set_intensity(LED_HW2, 0.5);
+					}
 				}
 				else {
-					ledpwm_fade(LED_HW1, 1.0, 0.3, 250);
-					chThdSleepMilliseconds(500);
-					ledpwm_fade(LED_HW1, 0.3, 1.0, 250);
-				}
+					if (mc_interface_get_battery_level(NULL) < 0.2) {
+						ledpwm_set_intensity(LED_HW2, 0.3);
+						ledpwm_fade(LED_HW1, 1.0, 0.3, 250);
+						chThdSleepMilliseconds(500);
+						ledpwm_fade(LED_HW1, 0.3, 1.0, 250);
+					}
+					else {
+						ledpwm_set_intensity(LED_HW1, 0.3);
+						ledpwm_fade(LED_HW2, 1.0, 0.3, 250);
+						chThdSleepMilliseconds(500);
+						ledpwm_fade(LED_HW2, 0.3, 1.0, 250);
+					}
+                                }
 			}
 		}
 
