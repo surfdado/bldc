@@ -150,6 +150,10 @@ package_dict["SOLO"] = [['solo', default_name],
                     ['solo_no_limits', no_limits_name]]
 package_dict["FSESC_75_200_ALU"] = [['fsesc_75_200_alu', default_name],
                     ['fsesc_75_200_alu_no_limits', no_limits_name]]
+package_dict["TRONIC_250"] = [['TRONIC_250', default_name]]
+package_dict["TRONIC_250R"] = [['TRONIC_250R', default_name]]
+package_dict["TRONIC_750"] = [['TRONIC_750', default_name]]
+package_dict["TRONIC_1000"] = [['TRONIC_1000', default_name]]
 
 # This is the firmware stub string
 res_firmwares_string = '        <file>TARGET_DESTINATION_DIRECTORY/TARGET_DESTINATION_FILENAME</file>\n'
