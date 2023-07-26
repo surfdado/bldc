@@ -47,6 +47,7 @@ package_dict["75_300_R2"] = [['75_300_r2', default_name],
 package_dict["75_300_R3"] = [['75_300_r3', default_name],
                     ['75_300_r3_no_limits', no_limits_name]]
 package_dict["AXIOM"] = [['axiom', default_name]]
+package_dict["Floatwheel_ADV"] = [['floatwheel_adv', default_name]]
 package_dict["UAVC_OMEGA"] = [['uavc_omega', default_name]]
 package_dict["HD60"] = [['hd60', default_name],
                     ['hd60_no_limits', no_limits_name]]
