@@ -51,6 +51,10 @@ void app_adc_detach_buttons(bool state);
 void app_adc_rev_override(bool state);
 void app_adc_cc_override(bool state);
 
+float app_adc_get_setpoint(void);
+float app_adc_get_pid_output(void);
+float app_adc_get_balance_adder(void);
+
 typedef enum {
 	UART_PORT_COMM_HEADER = 0,
 	UART_PORT_BUILTIN,

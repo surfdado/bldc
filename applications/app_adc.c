@@ -28,6 +28,7 @@
 #include "utils_sys.h"
 #include "comm_can.h"
 #include "hw.h"
+#include "imu/imu.h"
 #include <math.h>
 
 // Settings
@@ -65,6 +66,26 @@ static volatile bool adc_detached = false;
 static volatile bool buttons_detached = false;
 static volatile bool rev_override = false;
 static volatile bool cc_override = false;
+static float total_current = 0.0;
+static float balance_adder = 0.0;
+static float balance_setpoint = 30.0;
+static float balance_kp = 1.0;
+static float balance_kp2 = 0.001;
+static float balance_rate_prop = 0;
+static bool is_wheelie = false;
+
+float app_adc_get_setpoint()
+{
+	return balance_setpoint;
+}
+float app_adc_get_pid_output()
+{
+	return total_current;
+}
+float app_adc_get_balance_adder()
+{
+	return balance_adder;
+}
 
 void app_adc_configure(adc_config *conf) {
 	if (!buttons_detached && (((conf->buttons >> 0) & 1) || CTRL_USES_BUTTON(conf->ctrl_type))) {
@@ -77,6 +98,13 @@ void app_adc_configure(adc_config *conf) {
 	}
 
 	config = *conf;
+
+	app_configuration *appconf = mempools_alloc_appconf();
+	*appconf = *app_get_configuration();
+	balance_setpoint = appconf->app_balance_conf.tiltback_constant;
+	balance_kp = appconf->app_balance_conf.kp;
+	balance_kp2 = appconf->app_balance_conf.kp2;
+
 	ms_without_power = 0.0;
 }
 
@@ -330,7 +358,7 @@ static THD_FUNCTION(adc_thread, arg) {
 
 		case ADC_CTRL_TYPE_CURRENT_NOREV_BRAKE_ADC:
 		case ADC_CTRL_TYPE_CURRENT_REV_BUTTON_BRAKE_ADC:
-			pwr -= brake;
+			//pwr -= brake;
 			break;
 
 		case ADC_CTRL_TYPE_CURRENT_REV_BUTTON:
@@ -339,7 +367,7 @@ static THD_FUNCTION(adc_thread, arg) {
 		case ADC_CTRL_TYPE_PID_REV_BUTTON:
 			// Invert the voltage if the button is pressed
 			if (rev_button) {
-				pwr = -pwr;
+				//pwr = -pwr;
 			}
 			break;
 
@@ -357,6 +385,39 @@ static THD_FUNCTION(adc_thread, arg) {
 		static systime_t last_time = 0;
 		static float pwr_ramp = 0.0;
 		float ramp_time = fabsf(pwr) > fabsf(pwr_ramp) ? config.ramp_time_pos : config.ramp_time_neg;
+
+		balance_adder = 0;
+		if (config.ctrl_type == ADC_CTRL_TYPE_CURRENT_NOREV_BRAKE_ADC) {
+			float erpm = mc_interface_get_rpm();
+			if (brake > 0.5) {
+				if (erpm > 5000) {
+					ramp_time = config.ramp_time_neg;
+				}
+				float pitch_angle = RAD2DEG_f(imu_get_pitch());
+				// Rate P (Angle + Rate, rather than Angle-Rate Cascading)
+				float gyro[3];
+				imu_get_gyro(gyro);
+				float rate_prop = -gyro[1];
+				balance_rate_prop = balance_rate_prop * 0.9 + rate_prop;
+
+				if ((pitch_angle > (balance_setpoint - 2)) || (is_wheelie)) {
+					balance_adder = (balance_setpoint - pitch_angle) * balance_kp;
+					balance_adder += (balance_kp2 * rate_prop);
+					is_wheelie = true;
+
+					if (pitch_angle < (balance_setpoint - 6)) {
+						is_wheelie = false;
+						balance_rate_prop = 0;
+					}
+					if (pitch_angle > (balance_setpoint + 18)) {
+						is_wheelie = false;
+						// We've looped out, giving up - power cycle to re-enable wheelie mode!
+						balance_kp = 0;
+						balance_kp2 = 0;
+					}
+				}
+			}
+		}
 
 		if (ramp_time > 0.01) {
 			const float ramp_step = (float)ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0);
@@ -607,9 +668,10 @@ static THD_FUNCTION(adc_thread, arg) {
 				}
 
 				if (is_reverse) {
-					mc_interface_set_current_rel(-current_out);
+					mc_interface_set_current_rel(0);//-current_out);
 				} else {
-					mc_interface_set_current_rel(current_out);
+					total_current = current_out + balance_adder;
+					mc_interface_set_current_rel(total_current);
 				}
 			}
 		}
