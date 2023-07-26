@@ -358,6 +358,13 @@ static THD_FUNCTION(adc_thread, arg) {
 		static float pwr_ramp = 0.0;
 		float ramp_time = fabsf(pwr) > fabsf(pwr_ramp) ? config.ramp_time_pos : config.ramp_time_neg;
 
+		if (config.ctrl_type == ADC_CTRL_TYPE_CURRENT_NOREV_BRAKE_ADC) {
+			float erpm = mc_interface_get_rpm();
+			if ((brake > 0.9) && (erpm > 3000)) {
+				ramp_time = 0.1;
+			}
+		}
+
 		if (ramp_time > 0.01) {
 			const float ramp_step = (float)ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0);
 			utils_step_towards(&pwr_ramp, pwr, ramp_step);
