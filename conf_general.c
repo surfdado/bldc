@@ -50,7 +50,11 @@
 #define EEPROM_BASE_HW			3000
 #define EEPROM_BASE_CUSTOM		4000
 #define EEPROM_BASE_MCCONF_2	5000
+#ifdef EEPROM_BACKUP_ALTERNATE
+#define EEPROM_BASE_BACKUP		6100
+#else
 #define EEPROM_BASE_BACKUP		6000
+#endif
 
 // Global variables
 uint16_t VirtAddVarTab[NB_OF_VAR];
