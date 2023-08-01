@@ -249,7 +249,7 @@
 // NRF SWD
 #define NRF5x_SWDIO_GPIO		GPIOA
 #define NRF5x_SWDIO_PIN			13
-#define NRF5x_SWCLK_GPIO		GPIOB
+#define NRF5x_SWCLK_GPIO		GPIOA
 #define NRF5x_SWCLK_PIN			14
 
 /* for some reason the above nrf doesnt match 75300 schematic. mine are as follow */
