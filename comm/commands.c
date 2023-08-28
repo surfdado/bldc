@@ -1029,29 +1029,45 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	case COMM_GET_DECODED_BALANCE: {
 		int32_t ind = 0;
 		uint8_t send_buffer[50];
-		send_buffer[ind++] = COMM_GET_DECODED_BALANCE;
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pid_output() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pitch_angle() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_roll_angle() * 1000000.0), &ind);
-		if (is_floatcontrol) {
-			buffer_append_int32(send_buffer, balance_setpoint * 1000.0, &ind);
-			buffer_append_int32(send_buffer, balance_atr * 1000.0, &ind);
-			buffer_append_int32(send_buffer, balance_carve * 1000.0, &ind);
+		if (app_is_balance()) {
+			send_buffer[ind++] = COMM_GET_DECODED_BALANCE;
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pid_output() * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_pitch_angle() * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_roll_angle() * 1000000.0), &ind);
+			if (is_floatcontrol) {
+				buffer_append_int32(send_buffer, balance_setpoint * 1000.0, &ind);
+				buffer_append_int32(send_buffer, balance_atr * 1000.0, &ind);
+				buffer_append_int32(send_buffer, balance_carve * 1000.0, &ind);
+			}
+			else {
+				buffer_append_uint32(send_buffer, app_balance_get_diff_time(), &ind);
+				buffer_append_int32(send_buffer, (int32_t)(app_balance_get_motor_current() * 1000000.0), &ind);
+				buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug1() * 1000000.0), &ind);
+			}
+			buffer_append_uint16(send_buffer, app_balance_get_state(), &ind);
+			buffer_append_uint16(send_buffer, app_balance_get_switch_state(), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc1() * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc2() * 1000000.0), &ind);
+			if (is_floatcontrol) {
+				buffer_append_int32(send_buffer, (int32_t)(app_balance_get_true_pitch_angle() * 1000000.0), &ind);
+			}
+			else {
+				buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug2() * 1000000.0), &ind);
+			}
 		}
 		else {
-			buffer_append_uint32(send_buffer, app_balance_get_diff_time(), &ind);
-			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_motor_current() * 1000000.0), &ind);
-			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug1() * 1000000.0), &ind);
-		}
-		buffer_append_uint16(send_buffer, app_balance_get_state(), &ind);
-		buffer_append_uint16(send_buffer, app_balance_get_switch_state(), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc1() * 1000000.0), &ind);
-		buffer_append_int32(send_buffer, (int32_t)(app_balance_get_adc2() * 1000000.0), &ind);
-		if (is_floatcontrol) {
-			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_true_pitch_angle() * 1000000.0), &ind);
-		}
-		else {
-			buffer_append_int32(send_buffer, (int32_t)(app_balance_get_debug2() * 1000000.0), &ind);
+			send_buffer[ind++] = COMM_GET_DECODED_BALANCE;
+			buffer_append_int32(send_buffer, (int32_t)(app_adc_get_pid_output() * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(RAD2DEG_f(imu_get_pitch()) * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(RAD2DEG_f(imu_get_roll()) * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_adc_get_setpoint() * 1000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(app_adc_get_balance_adder() * 100000.0), &ind);
+			buffer_append_int32(send_buffer, 0, &ind);
+			buffer_append_uint16(send_buffer, 0, &ind);
+			buffer_append_uint16(send_buffer, 0, &ind);
+			buffer_append_int32(send_buffer, (int32_t)((((float)ADC_Value[ADC_IND_EXT])/4095) * V_REG * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)((((float)ADC_Value[ADC_IND_EXT2])/4095) * V_REG * 1000000.0), &ind);
+			buffer_append_int32(send_buffer, (int32_t)(RAD2DEG_f(imu_get_pitch()) * 1000000.0), &ind);
 		}
 		reply_func(send_buffer, ind);
 	} break;
