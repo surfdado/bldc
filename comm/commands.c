@@ -246,6 +246,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			(packet_id != COMM_LOCK_STATUS) &&
 			(packet_id != COMM_GET_QML_UI_HW) &&
 		        (packet_id != COMM_GET_QML_UI_APP) &&
+		        (packet_id != COMM_BMS_GET_VALUES) &&
 			(packet_id != COMM_CUSTOM_HW_DATA) &&
 			(packet_id != COMM_WRITE_LOCK)) {
 			//commands_printf("Blocked command: ID %d\n", packet_id);
