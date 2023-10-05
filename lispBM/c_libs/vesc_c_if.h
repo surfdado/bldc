@@ -592,6 +592,11 @@ typedef struct {
 	void (*foc_set_openloop_phase)(float current, float phase);
 	void (*foc_set_openloop_duty)(float dutyCycle, float rpm);
 	void (*foc_set_openloop_duty_phase)(float dutyCycle, float phase);
+
+	// FW/HW Info
+	void (*get_fw_version)(int *vmajor, int *vminor, int *vtest);
+	char* (*get_fw_name)(void);
+	char* (*get_hw_name)(void);
 } vesc_c_if;
 
 typedef struct {
