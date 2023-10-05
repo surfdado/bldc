@@ -602,4 +602,8 @@ void hw_try_restore_i2c(void);
 uint8_t hw_id_from_uuid(void);
 uint8_t hw_id_from_pins(void);
 
+char *get_fw_version(void);
+char *get_fw_name(void);
+char *get_hw_name(void);
+
 #endif /* HW_H_ */

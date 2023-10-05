@@ -926,6 +926,11 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.foc_set_openloop_duty = mcpwm_foc_set_openloop_duty;
 		cif.cif.foc_set_openloop_duty_phase = mcpwm_foc_set_openloop_duty_phase;
 
+		// Firmware/hardware version
+		cif.cif.get_fw_version = get_fw_version;
+		cif.cif.get_fw_name = get_fw_name;
+		cif.cif.get_hw_name = get_hw_name;
+
 		// Micrologs
 		cif.cif.mlog_resetlog = mlog_resetlog;
 		cif.cif.mlog_getbufsize = mlog_getbufsize;
