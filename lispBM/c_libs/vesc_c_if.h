@@ -597,6 +597,11 @@ typedef struct {
 	void (*foc_set_openloop_duty)(float dutyCycle, float rpm);
 	void (*foc_set_openloop_duty_phase)(float dutyCycle, float phase);
 
+	// FW/HW Info
+	char* (*get_fw_version)(void);
+	char* (*get_fw_name)(void);
+	char* (*get_hw_name)(void);
+
 	// Micrologs
 	void (*mlog_resetlog)(void);
 	int (*mlog_getbufsize)(void);
