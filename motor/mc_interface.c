@@ -493,6 +493,7 @@ const char* mc_interface_fault_to_string(mc_fault_code fault) {
     case FAULT_CODE_PHASE_FILTER: return "FAULT_CODE_PHASE_FILTER";
     case FAULT_CODE_ENCODER_FAULT: return "FAULT_CODE_ENCODER_FAULT";
 	case FAULT_CODE_LV_OUTPUT_FAULT: return "FAULT_CODE_LV_OUTPUT_FAULT";
+	case FAULT_CODE_DUMMY_FEATURE_CHECK: return "B"; // this tells the package that the BMS API is suppported
 	}
 
 	return "Unknown fault";
