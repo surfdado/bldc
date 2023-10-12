@@ -154,6 +154,7 @@ typedef enum {
 	BMS_OP_STATE_BALANCING,		// 9
 	BMS_OP_STATE_CHARGED,		// 10
 	BMS_OP_STATE_FORCEON,		// 11
+	BMS_OP_STATE_UNKNOWN = 255
 } bms_op_state;
 
 typedef struct {
