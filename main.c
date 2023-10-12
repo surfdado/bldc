@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "bms.h"
 #include "mc_interface.h"
 #include "mcpwm.h"
 #include "mcpwm_foc.h"
@@ -107,6 +108,7 @@ static THD_FUNCTION(led_thread, arg) {
 	(void)arg;
 
 	chRegSetThreadName("Main LED");
+	int step = 0;
 
 	for(;;) {
 		mc_state state1 = mc_interface_get_state();
@@ -120,6 +122,7 @@ static THD_FUNCTION(led_thread, arg) {
 		}
 
 		mc_fault_code fault = mc_interface_get_fault();
+		bms_fault_state bmsfault = bms_get_fault_state();
 #ifdef HW_HAS_DUAL_MOTORS
 		mc_interface_select_motor_thread(2);
 		mc_fault_code fault2 = mc_interface_get_fault();
@@ -133,6 +136,8 @@ static THD_FUNCTION(led_thread, arg) {
 		if (fault != FAULT_CODE_NONE || fault2 != FAULT_CODE_NONE) {
 			ledpwm_set_intensity(LED_RED, 0.0);
 			ledpwm_set_intensity(LED_HW1, 0.0);
+			ledpwm_set_intensity(LED_HW2, 0.0);
+			ledpwm_set_intensity(LED_HW3, 0.0);
 			chThdSleepMilliseconds(1000);
 
 			for (int i = 0;i < (int)fault;i++) {
@@ -157,44 +162,90 @@ static THD_FUNCTION(led_thread, arg) {
 			}
 			chThdSleepMilliseconds(500);
 #endif
+		} else if (bmsfault > 0) {
+			ledpwm_set_intensity(LED_RED, 0.0);
+			ledpwm_set_intensity(LED_GREEN, 0.0);
+			ledpwm_set_intensity(LED_HW1, 0.0);
+			ledpwm_set_intensity(LED_HW2, 0.0);
+			ledpwm_set_intensity(LED_HW3, 0.0);
+			chThdSleepMilliseconds(1000);
+
+			for (int i = 0;i < (int)bmsfault;i++) {
+				ledpwm_set_intensity(LED_RED, 1.0);
+				ledpwm_set_intensity(LED_GREEN, 1.0);
+				ledpwm_set_intensity(LED_HW3, 1.0);
+				chThdSleepMilliseconds(250);
+				ledpwm_set_intensity(LED_RED, 0.0);
+				ledpwm_set_intensity(LED_GREEN, 0.0);
+				ledpwm_set_intensity(LED_HW3, 0.0);
+				chThdSleepMilliseconds(250);
+			}
+
+			chThdSleepMilliseconds(500);
 		} else {
 			ledpwm_set_intensity(LED_RED, 0.0);
 
 			if (app_is_balance() == false) {
+				ledpwm_set_intensity(LED_HW1, 1);
 				ledpwm_set_intensity(LED_HW2, 0);
-				ledpwm_set_intensity(LED_HW1, 0.8);
-				chThdSleepMilliseconds(100);
+				ledpwm_set_intensity(LED_HW3, 0);
+				chThdSleepMilliseconds(200);
 				ledpwm_set_intensity(LED_HW1, 0.0);
+				ledpwm_set_intensity(LED_HW2, 0.3);
 				chThdSleepMilliseconds(1900);
 			}
 			else {
 				if (fabsf(mc_interface_get_rpm()) > 500) {
 					if (mc_interface_get_battery_level(NULL) > 0.3) {
 						// Green
-						ledpwm_set_intensity(LED_HW1, 0.25);
-						ledpwm_set_intensity(LED_HW2, 0);
+						ledpwm_set_intensity(LED_HW1, 0.0);
+						ledpwm_set_intensity(LED_HW2, 0.3);
+						ledpwm_set_intensity(LED_HW3, 0);
 					} else if (mc_interface_get_battery_level(NULL) > 0.1) {
 						// Yellow
 						ledpwm_set_intensity(LED_HW1, 0.4);
 						ledpwm_set_intensity(LED_HW2, 0.4);
+						ledpwm_set_intensity(LED_HW3, 0.0);
 					} else {
 						// Red
-						ledpwm_set_intensity(LED_HW1, 0);
-						ledpwm_set_intensity(LED_HW2, 0.5);
+						ledpwm_set_intensity(LED_HW1, 0.5);
+						ledpwm_set_intensity(LED_HW2, 0.0);
+						ledpwm_set_intensity(LED_HW3, 0.0);
 					}
 				}
 				else {
 					if (mc_interface_get_battery_level(NULL) < 0.2) {
 						ledpwm_set_intensity(LED_HW2, 0.3);
-						ledpwm_fade(LED_HW1, 1.0, 0.3, 250);
+						ledpwm_fade(LED_HW1, 1.0, 0.3, 500);
 						chThdSleepMilliseconds(500);
-						ledpwm_fade(LED_HW1, 0.3, 1.0, 250);
+						ledpwm_fade(LED_HW1, 0.3, 1.0, 500);
 					}
 					else {
-						ledpwm_set_intensity(LED_HW1, 0.3);
-						ledpwm_fade(LED_HW2, 1.0, 0.3, 250);
-						chThdSleepMilliseconds(500);
-						ledpwm_fade(LED_HW2, 0.3, 1.0, 250);
+						if (step == 0) {
+							ledpwm_set_intensity(LED_HW1, 0.0);
+							ledpwm_set_intensity(LED_HW2, 0.0);
+							ledpwm_fade(LED_HW3, 0.0, 1.0, 1000);
+						}
+						else if (step == 1) {
+							ledpwm_fade(LED_HW2, 0.0, 1.0, 1000);
+						}
+						else if (step == 2) {
+							ledpwm_fade(LED_HW3, 1.0, 0.0, 1000);
+						}
+						else if (step == 3) {
+							ledpwm_fade(LED_HW1, 0.0, 1.0, 1000);
+						}
+						else if (step == 4) {
+							ledpwm_fade(LED_HW2, 1.0, 0.0, 1000);
+						}
+						else if (step == 5) {
+							ledpwm_fade(LED_HW3, 0.0, 1.0, 1000);
+						}
+						else if (step == 6) {
+							ledpwm_fade(LED_HW1, 1.0, 0.0, 1000);
+							step = 0;
+						}
+						step++;
 					}
                                 }
 			}
