@@ -81,12 +81,12 @@ void button_led_init(void);
 #define BUTTON_LED_G_PIN  12
 #define BUTTON_LED_B_GPIO GPIOC
 #define BUTTON_LED_B_PIN  15
-#define LED_PWM1_ON()			palClearPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
-#define LED_PWM1_OFF()			palSetPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
-#define LED_PWM2_ON()			palClearPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
-#define LED_PWM2_OFF()			palSetPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
-#define LED_PWM3_ON()			palClearPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
-#define LED_PWM3_OFF()			palSetPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
+#define LED_PWM1_ON()			palSetPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM1_OFF()			palClearPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM2_ON()			palSetPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM2_OFF()			palClearPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM3_ON()			palSetPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
+#define LED_PWM3_OFF()			palClearPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
 
 #define HW_EARLY_INIT()			button_led_init();
 #endif
