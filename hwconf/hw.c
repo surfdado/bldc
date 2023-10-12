@@ -42,11 +42,11 @@ uint8_t hw_id_from_uuid(void) {
 
 const char *fw_name = FW_NAME;
 const char *hw_name = HW_NAME;
-char versionstr[15];
 
-char *get_fw_version() {
-	sprintf(versionstr, "%d.%d.%d", FW_VERSION_MAJOR, FW_VERSION_MINOR, FW_TEST_VERSION_NUMBER);
-	return versionstr;
+void get_fw_version(int *vmajor, int *vminor, int *vtest) {
+	*vmajor = FW_VERSION_MAJOR;
+	*vminor = FW_VERSION_MINOR;
+	*vtest = FW_TEST_VERSION_NUMBER;
 }
 char *get_fw_name() {
 	return fw_name;
