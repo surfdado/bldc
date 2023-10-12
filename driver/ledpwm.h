@@ -51,6 +51,8 @@ void ledpwm_set_intensity(unsigned int led, float intensity);
 void ledpwm_led_on(int led);
 void ledpwm_led_off(int led);
 void ledpwm_fade(int led, float intensity_from, float intensity_to, int duration_ms);
+void ledpwm_fade_nb(int led, int target, int step_size);
 void ledpwm_update_pwm(void);
+void ledpwm_next(void);
 
 #endif /* LEDPWM_H_ */
