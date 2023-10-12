@@ -25,6 +25,9 @@
 
 // Private variables
 static volatile int led_values[LEDPWM_LED_NUM];
+static float led_intensity[LEDPWM_LED_NUM];
+static float led_target[LEDPWM_LED_NUM];
+static int led_step_size[LEDPWM_LED_NUM];
 static uint8_t gamma_table[LEDPWM_CNT_TOP + 1];
 
 void ledpwm_init(void) {
@@ -56,6 +59,7 @@ void ledpwm_set_intensity(unsigned int led, float intensity) {
 	}
 
 	led_values[led] = gamma_table[(int)(intensity * LEDPWM_CNT_TOP)];
+	led_intensity[led] = intensity;
 }
 
 void ledpwm_led_on(int led) {
@@ -64,6 +68,7 @@ void ledpwm_led_on(int led) {
 	}
 
 	led_values[led] = LEDPWM_CNT_TOP;
+	led_intensity[led] = 1.0;
 }
 
 void ledpwm_led_off(int led) {
@@ -72,6 +77,7 @@ void ledpwm_led_off(int led) {
 	}
 
 	led_values[led] = 0;
+	led_intensity[led] = 0.0;
 }
 
 /**
@@ -94,6 +100,27 @@ void ledpwm_fade(int led, float from, float to, int duration_ms) {
 		time += step_ms;
 	}
 	while (time <= duration_ms);
+}
+
+void ledpwm_fade_nb(int led, int target, int step_size) {
+	
+	led_target[led] = target;
+	led_step_size[led] = step_size;
+}
+
+void ledpwm_next() {
+	float intensity;
+	for (int led=0; led < LEDPWM_LED_NUM; led++) {
+	        intensity = led_intensity[led];
+		if (led_target[led] > led_intensity[led]) {
+			intensity += led_step_size[led];
+			ledpwm_set_intensity(led, intensity);
+		}
+		else if (led_target[led] < led_intensity[led]) {
+			intensity -= led_step_size[led];
+			ledpwm_set_intensity(led, intensity);
+		}
+	}
 }
 
 /*
