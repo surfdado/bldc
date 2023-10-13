@@ -303,8 +303,8 @@ bool bms_process_can_frame(uint32_t can_id, uint8_t *data8, int len, bool is_ext
 					int32_t ind = 0;
 					m_values.can_id = id;
 					m_values.update_time = chVTGetSystemTimeX();
-					m_values.op_state = data8[ind++];
 					m_values.fault_state = data8[ind++];
+					m_values.op_state = data8[ind++];
 				}
 			} break;
 
