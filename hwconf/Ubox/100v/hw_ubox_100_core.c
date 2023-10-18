@@ -25,6 +25,19 @@
 #include <math.h>
 #include "mc_interface.h"
 
+#include "shutdown.h"
+#include "app.h"
+#include "conf_general.h"
+#include "commands.h"
+#include "timeout.h"
+
+
+#define POWER_EN_ON()				do{palSetPad(GPIOA, 15);}while(0)
+#define POWER_EN_OFF()				do{palClearPad(GPIOA, 15);}while(0)
+
+#define POWER_KEY_IO_PULL_LOW()		do{palClearPad(GPIOC, 13);}while(0)
+#define POWER_KEY_IO_RELEASE()		do{palSetPad(GPIOC, 13);}while(0)
+#define QUERY_POWER_KEY_IO()		(palReadPad(GPIOC, 13))
 // Variables
 static volatile bool i2c_running = false;
 
@@ -105,6 +118,14 @@ void hw_init_gpio(void) {
 	palSetPadMode(GPIOC, 3, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 4, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 5, PAL_MODE_INPUT_ANALOG);
+	//POWER ON EN
+	palSetPadMode(GPIOA, 15, PAL_MODE_OUTPUT_PUSHPULL);
+	palSetPad(GPIOA, 15);
+
+	palSetPadMode(GPIOC, 13, PAL_MODE_OUTPUT_OPENDRAIN | PAL_MODE_INPUT_PULLUP);
+	POWER_KEY_IO_RELEASE();
+
+	shutdown_init();
 }
 
 void hw_setup_adc_channels(void) {
@@ -253,4 +274,170 @@ float hw100_250_get_temp(void) {
 	}
 
 	return res;
+}
+
+// Private variables
+bool volatile m_button_pressed = false;
+static volatile float m_inactivity_time = 0.0;
+static THD_WORKING_AREA(shutdown_thread_wa, 256);
+static mutex_t m_sample_mutex;
+static volatile bool m_init_done = false;
+static volatile bool m_sampling_disabled = false;
+
+// Private functions
+static THD_FUNCTION(shutdown_thread, arg);
+
+void shutdown_init(void) {
+	chMtxObjectInit(&m_sample_mutex);
+	chThdCreateStatic(shutdown_thread_wa, sizeof(shutdown_thread_wa), NORMALPRIO, shutdown_thread, NULL);
+	m_init_done = true;
+}
+
+void shutdown_reset_timer(void) {
+	m_inactivity_time = 0.0;
+}
+
+bool shutdown_button_pressed(void) {
+	return m_button_pressed;
+}
+
+float shutdown_get_inactivity_time(void) {
+	return m_inactivity_time;
+}
+
+static bool do_shutdown(void) {
+	conf_general_store_backup_data();
+
+	chThdSleepMilliseconds(100);
+	DISABLE_GATE();
+	POWER_EN_OFF();
+	return true;
+}
+
+
+typedef enum {
+	power_key_type_undecided = 0,
+	power_key_type_momentary,
+	power_key_type_latching,
+	power_key_type_other_source,
+}enPOWER_KEY_TYPE;
+static enPOWER_KEY_TYPE power_key_type = power_key_type_undecided;
+static uint32_t power_key_pressed_ms = 0;
+static bool power_key_pressed_when_power_on = false;
+
+static THD_FUNCTION(shutdown_thread, arg) {
+	(void)arg;
+	chRegSetThreadName("Shutdown");
+
+	static bool power_key_io_released = false;
+	systime_t last_iteration_time = chVTGetSystemTimeX();
+
+	for(;;)	{
+		uint8_t power_key_click = 0;
+		uint32_t sys_time_ms = chVTGetSystemTime() / (float)CH_CFG_ST_FREQUENCY * 1000.0f;
+
+		float dt = (float)chVTTimeElapsedSinceX(last_iteration_time) / (float)CH_CFG_ST_FREQUENCY;
+		last_iteration_time = chVTGetSystemTimeX();
+
+		//Check power button.
+		//Because the low level of power key is about 1V, high is 3.3v by its hardware design.
+		//This 1.0V low signal voltage maybe can not to make the MCU to recognize it as 0, so it needs a workaround.
+		//The principle is: to check if the IO be pulled up from 0V to 3.3V by internal pull-up resistor,
+		//if yes, the power key is not pressing. The 0V is implemented by the assistance of IO's open drain pull down.
+	    if(power_key_io_released == false) {
+	    	power_key_io_released = true;
+			POWER_KEY_IO_RELEASE();	//Release the open drain configured IO and wait 10ms to let the internal resistor
+									//to pull the line up, next time to check the IO pin.
+	    } else {
+	        if(QUERY_POWER_KEY_IO() == 0) {
+	            if(power_key_pressed_ms < 1000 * 60) {
+	            	power_key_pressed_ms += 20;//
+	            }
+	        } else {
+	            if((power_key_pressed_ms > 50) && (power_key_pressed_ms < 500)) {
+	                power_key_click = 1;
+	            }
+	            power_key_pressed_ms = 0;
+	        }
+
+	        power_key_io_released = false;
+	        POWER_KEY_IO_PULL_LOW();//Pre-pull down the open drain configured IO, to make this IO read as 0
+	    }
+
+	    if(power_key_type == power_key_type_undecided) {
+			if(sys_time_ms < 1000) {
+				if(power_key_pressed_ms > 100) {
+					power_key_pressed_when_power_on = true;
+				}
+			} else {
+				if(power_key_pressed_when_power_on == false) {
+					power_key_type = power_key_type_other_source;
+				} else {
+					if(power_key_pressed_ms == 0) {
+						power_key_type = power_key_type_momentary;
+					} else if(power_key_pressed_ms > 2000) {
+						power_key_type = power_key_type_latching;
+					}
+				}
+			}
+
+			POWER_EN_ON();
+	    } else if(power_key_type == power_key_type_momentary) {
+			m_button_pressed = (bool)(power_key_pressed_ms > 2000);
+			bool clicked = (bool)(power_key_pressed_ms > 1000);
+
+			const app_configuration *conf = app_get_configuration();
+
+			// Note: When the gates are enabled, the push to start function
+			// will prevent the regulator from shutting down. Therefore, the
+			// gate driver has to be disabled.
+
+			switch (conf->shutdown_mode) {
+				case SHUTDOWN_MODE_ALWAYS_OFF:
+				if (m_button_pressed) {
+					do_shutdown();
+				}
+				break;
+				case SHUTDOWN_MODE_ALWAYS_ON:
+				POWER_EN_ON();
+				break;
+				case SHUTDOWN_MODE_TOGGLE_BUTTON_ONLY:
+				if(clicked)	{
+					do_shutdown();
+				}
+				break;
+				default:	break;
+			}
+			if (conf->shutdown_mode >= SHUTDOWN_MODE_OFF_AFTER_10S) {
+				m_inactivity_time += dt;
+					float shutdown_timeout = 0.0;
+
+				switch (conf->shutdown_mode) {
+				case SHUTDOWN_MODE_OFF_AFTER_10S: shutdown_timeout = 10.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_1M: shutdown_timeout = 60.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_5M: shutdown_timeout = 60.0 * 5.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_10M: shutdown_timeout = 60.0 * 10.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_30M: shutdown_timeout = 60.0 * 30.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_1H: shutdown_timeout = 60.0 * 60.0; break;
+				case SHUTDOWN_MODE_OFF_AFTER_5H: shutdown_timeout = 60.0 * 60.0 * 5.0; break;
+				default: break;
+				}
+				if (m_inactivity_time >= shutdown_timeout) {
+					do_shutdown();
+				}
+			} else {
+				m_inactivity_time = 0.0;
+			}
+
+			if(power_key_pressed_ms > 2000) {
+				do_shutdown();
+			}
+	    } else {
+			POWER_EN_OFF();
+	    }
+
+		timeout_reset();
+
+		chThdSleepMilliseconds(10);
+	}
 }
