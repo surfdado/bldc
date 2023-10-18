@@ -180,6 +180,16 @@ else
 endif
 endef
 
+distclean:
+	rm `find build -name "*".hex`
+	rm `find build -name "*".elf`
+	rm `find build -name "*".dmp`
+	rm `find build -name "*".list`
+	rm `find build -name "*".map`
+	rm -rf `find build -name lst`
+	rm -rf `find build -name obj`
+	rm -rf `find build -name .dep`
+
 clear_option_bytes:
 	$(V1) openocd -f board/stm32f4discovery.cfg -c "init" -c "stm32f2x unlock 0" -c "mww 0x40023C08 0x08192A3B; mww 0x40023C08 0x4C5D6E7F; mww 0x40023C14 0x0fffaaed" -c "exit"
 
