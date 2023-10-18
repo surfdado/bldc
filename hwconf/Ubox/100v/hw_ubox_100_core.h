@@ -34,6 +34,9 @@
 #error "Must define hardware type"
 #endif
 
+// Shutdown:
+#define SHUTDOWN_RESET()					shutdown_reset_timer()
+
 // HW properties
 #define HW_HAS_3_SHUNTS
 #define INVERTED_SHUNT_POLARITY
