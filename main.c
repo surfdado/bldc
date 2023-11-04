@@ -190,8 +190,9 @@ static THD_FUNCTION(led_thread, arg) {
 				ledpwm_set_intensity(LED_HW2, 0);
 				ledpwm_set_intensity(LED_HW3, 0);
 				chThdSleepMilliseconds(200);
-				ledpwm_set_intensity(LED_HW1, 0.0);
-				ledpwm_set_intensity(LED_HW2, 0.3);
+				ledpwm_set_intensity(LED_HW1, 0.2);
+				ledpwm_set_intensity(LED_HW2, 0.2);
+				ledpwm_set_intensity(LED_HW3, 0.0);
 				chThdSleepMilliseconds(1900);
 			}
 			else {
