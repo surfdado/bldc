@@ -74,6 +74,13 @@ static thread_t *blocking_tp;
 static bool is_lock_initialized = false;
 static bool writelock = false;//true;
 static unsigned int writelock_pin = 0;
+// Track last time there was a incorrect pin submitted to protect against bruteforce attemps.
+static systime_t writelock_last_failed_pin_attempt = 0;
+static unsigned int writelock_pin_attempt_cooldown=1000;
+static bool writelock_disabled_last_cmd = false;
+// Protect against stack based overflow in COMM_FORWARD_CAN and COMM_WRITE_UNLOCK_CMD
+static int recursion_depth = 0;
+static const int MAX_RECURSION_DEPTH = 5; // Set a limit for recursion depth
 
 // Private variables
 static char print_buffer[PRINT_BUFFER_SIZE];
@@ -248,7 +255,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		        (packet_id != COMM_GET_QML_UI_APP) &&
 		        (packet_id != COMM_BMS_GET_VALUES) &&
 			(packet_id != COMM_CUSTOM_HW_DATA) &&
-			(packet_id != COMM_WRITE_LOCK)) {
+			(packet_id != COMM_WRITE_LOCK) &&
+			(packet_id != COMM_WRITE_UNLOCK_CMD)) {
 			//commands_printf("Blocked command: ID %d\n", packet_id);
 			return;
 		}
@@ -788,12 +796,19 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_FORWARD_CAN: {
+		if (len <= 1 || recursion_depth >= MAX_RECURSION_DEPTH) {
+        	// Base case: Not enough data to process or max recursion depth reached
+        	recursion_depth = 0; // Reset recursion depth
+        	return;
+		}
 		send_func_can_fwd = reply_func;
 
 #ifdef HW_HAS_DUAL_MOTORS
 		if (data[0] == utils_second_motor_id()) {
 			mc_interface_select_motor_thread(2);
+			recursion_depth++;
 			commands_process_packet(data + 1, len - 1, reply_func);
+			recursion_depth--;
 			mc_interface_select_motor_thread(1);
 		} else {
 			comm_can_send_buffer(data[0], data + 1, len - 1, 0);
@@ -1709,9 +1724,15 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			uint8_t magic_number = data[ind++];
 			uint32_t pin = buffer_get_uint16(data, &ind);
 			uint8_t lock_enable = data[ind++];
-
-			if ((magic_number == 169) && (pin == writelock_pin)) {
+			systime_t current_time = chVTGetSystemTimeX();
+			if ((magic_number == 169) && (pin == writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) < writelock_pin_attempt_cooldown))) {
 				writelock = (lock_enable && pin>0) ? true : false;
+				writelock_last_failed_pin_attempt = 0;
+				writelock_disabled_last_cmd=!writelock;
+			}
+			else{
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				writelock_pin_attempt_cooldown*=2;
 			}
 			// Sends no response - call COMM_LOCK_STATUS to check success/fail
 		}
@@ -1726,18 +1747,21 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			bool lock_on_boot = (data[ind++] == 1);
 
 			if (magic_number == 169) {
-			  int didset = 0;
-			  if  (old_pin == writelock_pin) {
-				// write new pin to eeprom
-				conf_general_set_writelock_pin(new_pin, lock_on_boot);
-				writelock_pin = conf_general_get_writelock_pin();
-
-				// when lock_on_boot is set, we immediately enable writelock
-				writelock = (writelock_pin > 0) && lock_on_boot;
-				didset = 1;
-			  }
+				int didset = 0;
+				systime_t current_time = chVTGetSystemTimeX();
+				if (old_pin == writelock_pin && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) < writelock_pin_attempt_cooldown))) {
+					// write new pin to eeprom
+					conf_general_set_writelock_pin(new_pin, lock_on_boot);
+					writelock_pin = conf_general_get_writelock_pin();
+					// when lock_on_boot is set, we immediately enable writelock
+					writelock = (writelock_pin > 0) && lock_on_boot;
+					didset = 1;
+					writelock_last_failed_pin_attempt = 0;
+			  	}
 			  else {
 			    new_pin = 0;
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				writelock_pin_attempt_cooldown*=2;
 			  }
 			  ind = 0;
 
@@ -1765,7 +1789,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			send_buffer[ind++] = packet_id;
 			send_buffer[ind++] = 169;			// magic number!
 			send_buffer[ind++] = writelock;			// is writelock currently in place?
-			send_buffer[ind++] = (pin == writelock_pin);	// does the passed pin match?
+			systime_t current_time = chVTGetSystemTimeX();
+			if(writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) < writelock_pin_attempt_cooldown)){
+				send_buffer[ind++] = (pin == writelock_pin);	// does the passed pin match?
+				writelock_last_failed_pin_attempt = 0;
+			}
+			else
+			{
+				send_buffer[ind++] = 0;	// protection against bruteforce attacks
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				writelock_pin_attempt_cooldown*=2;
+			}
 			send_buffer[ind++] = (writelock_pin != 0);	// is a pin set?
 			send_buffer[ind++] = conf_general_is_locked_on_boot();
 
@@ -1775,6 +1809,44 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			reply_func(send_buffer, ind);
 		}
 	} break;
+
+	//Allows a command to be called while writelock is enabled by passing in the pin and command to be run.
+	case COMM_WRITE_UNLOCK_CMD:{
+		if (len <= 2 || recursion_depth >= MAX_RECURSION_DEPTH) {
+        	// Base case: Not enough data to process or max recursion depth reached
+        	recursion_depth = 0; // Reset recursion depth
+        	return;
+		}
+		int32_t ind = 0;
+		uint32_t pin = buffer_get_uint16(data, &ind);
+		if(writelock){
+			systime_t current_time = chVTGetSystemTimeX();
+			if(pin == writelock_pin && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))){
+				writelock=false;
+				writelock_disabled_last_cmd=false;
+				recursion_depth++;
+				commands_process_packet(data + 2, len - 2, reply_func);
+				recursion_depth--;
+				if(!writelock_disabled_last_cmd) //special case if we call COMM_WRITE_LOCK and disable the lock
+				{
+					writelock=true;
+				}
+				writelock_disabled_last_cmd=false;
+				writelock_last_failed_pin_attempt = 0;
+			}
+			else
+			{
+				// Sends no response - call COMM_LOCK_STATUS to check success/fail
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				writelock_pin_attempt_cooldown*=2;
+			} 
+			break;
+		}
+		//process the command as normal if writelock isn't enabled
+		recursion_depth++;
+		commands_process_packet(data + 2, len - 2, reply_func);
+		recursion_depth--;
+	 } break;
 
 	// Blocking commands. Only one of them runs at any given time, in their
 	// own thread. If other blocking commands come before the previous one has
