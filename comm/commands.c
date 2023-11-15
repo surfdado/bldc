@@ -74,6 +74,7 @@ static thread_t *blocking_tp;
 static bool is_lock_initialized = false;
 static bool writelock = false;//true;
 static unsigned int writelock_pin = 0;
+static unsigned int writelock_pin_prev = 0;
 // Track last time there was a incorrect pin submitted to protect against bruteforce attemps.
 static systime_t writelock_last_failed_pin_attempt = 0;
 static unsigned int writelock_pin_attempt_cooldown=1000;
@@ -278,8 +279,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 
 	}
-
-	switch (packet_id) {
+	
+		switch (packet_id) {
 	case COMM_FW_VERSION: {
 		int32_t ind = 0;
 		uint8_t send_buffer[65];
@@ -1718,13 +1719,16 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				writelock = (lock_enable && pin>0) ? true : false;
 				writelock_last_failed_pin_attempt = 0;
 				writelock_disabled_last_cmd=!writelock;
-			}
-			else{
-				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				break;
+			}	
+			if(pin != writelock_pin_prev)
+			{
 				writelock_pin_attempt_cooldown*=2;
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
 			}
-			// Sends no response - call COMM_LOCK_STATUS to check success/fail
+			writelock_pin_prev = pin;
 		}
+			// Sends no response - call COMM_LOCK_STATUS to check success/fail
 	} break;
 
 	case COMM_LOCK_SETPIN: {
@@ -1749,8 +1753,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			  	}
 			  else {
 			    new_pin = 0;
-				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
-				writelock_pin_attempt_cooldown*=2;
+				if(old_pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = old_pin;
 			  }
 			  ind = 0;
 
@@ -1786,8 +1794,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			else
 			{
 				send_buffer[ind++] = 0;	// protection against bruteforce attacks
-				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
-				writelock_pin_attempt_cooldown*=2;
+				if(pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = pin;
 			}
 			send_buffer[ind++] = (writelock_pin != 0);	// is a pin set?
 			send_buffer[ind++] = conf_general_is_locked_on_boot();
@@ -1826,8 +1838,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			else
 			{
 				// Sends no response - call COMM_LOCK_STATUS to check success/fail
-				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
-				writelock_pin_attempt_cooldown*=2;
+				if(pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = pin;
 			} 
 			break;
 		}
@@ -1873,7 +1889,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	default:
 		break;
 	}
-}
+	}
 
 int commands_printf(const char* format, ...) {
 	chMtxLock(&print_mutex);
@@ -2069,7 +2085,7 @@ void commands_apply_mcconf_hw_limits(mc_configuration *mcconf) {
     }
 
     utils_truncate_number_abs(&mcconf->foc_sl_erpm_start, mcconf->foc_sl_erpm * 0.9);
-
+	
 #ifndef DISABLE_HW_LIMITS
 
     // TODO: Maybe truncate values that get close to numerical instabilities when set
