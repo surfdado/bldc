@@ -22,6 +22,8 @@
 
 #define HW_NAME                 "TRONIC 250R"
 
+void button_led_init(void);
+
 // HW properties
 //#define CURRENT_FILTER_ON()     palSetPad(GPIOD, 2)
 //#define CURRENT_FILTER_OFF()    palClearPad(GPIOD, 2)
@@ -38,6 +40,21 @@
 #define LED_GREEN_OFF()         palClearPad(GPIOB, 0)
 #define LED_RED_ON()            palSetPad(GPIOB, 1)
 #define LED_RED_OFF()           palClearPad(GPIOB, 1)
+
+#define BUTTON_LED_R_GPIO GPIOC
+#define BUTTON_LED_R_PIN  14
+#define BUTTON_LED_G_GPIO GPIOB
+#define BUTTON_LED_G_PIN  12
+#define BUTTON_LED_B_GPIO GPIOC
+#define BUTTON_LED_B_PIN  15
+#define LED_PWM1_ON()			palSetPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM1_OFF()			palClearPad(BUTTON_LED_R_GPIO, BUTTON_LED_R_PIN)
+#define LED_PWM2_ON()			palSetPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM2_OFF()			palClearPad(BUTTON_LED_G_GPIO, BUTTON_LED_G_PIN)
+#define LED_PWM3_ON()			palSetPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
+#define LED_PWM3_OFF()			palClearPad(BUTTON_LED_B_GPIO, BUTTON_LED_B_PIN)
+
+#define HW_EARLY_INIT()			button_led_init();
 
 /*
  * ADC Vector
