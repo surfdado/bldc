@@ -20,7 +20,9 @@
 #ifndef HW_Thor300_20s_H_
 #define HW_Thor300_20s_H_
 
+#ifndef HW_NAME
 #define HW_NAME					"Thor300"
+#endif
 
 // HW properties
 #define HW_HAS_3_SHUNTS
