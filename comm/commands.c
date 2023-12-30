@@ -443,7 +443,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			  //case COMM_LOCK_SETPIN:
 		       	  //case COMM_WRITE_LOCK:
 			  //case COMM_LOCK_STATUS:
-
+			case COMM_SHUTDOWN:
 			  return; // reject command while motor is running
 
 			default: ;// do nothing
@@ -2022,6 +2022,27 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		commands_process_packet(data + 2, len - 2, reply_func);
 		recursion_depth--;
 	 } break;
+
+	case COMM_SHUTDOWN: {
+		int ind = 0;
+		int force = data[ind++];
+		if (fabsf(mc_interface_get_rpm()) > 100) {
+			// Don't allow this while riding, unless force == 1
+			if (force != 1) {
+				break;
+			}
+		}
+
+		int is_restart = data[ind++];
+		if (is_restart == 1) {
+			// same as terminal rebootwdt command
+			chSysLock();
+			for (;;) {__NOP();}
+		}
+		else {
+			do_shutdown();
+		}
+	} break;
 
 	// Blocking commands. Only one of them runs at any given time, in their
 	// own thread. If other blocking commands come before the previous one has

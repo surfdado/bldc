@@ -66,7 +66,7 @@ void shutdown_set_sampling_disabled(bool disabled) {
 	chMtxUnlock(&m_sample_mutex);
 }
 
-static bool do_shutdown(void) {
+bool do_shutdown(void) {
 	conf_general_store_backup_data();
 #ifdef USE_LISPBM
 	lispif_process_shutdown();
@@ -164,5 +164,8 @@ static THD_FUNCTION(shutdown_thread, arg) {
 		chThdSleepMilliseconds(10);
 	}
 }
+
+#else
+bool do_shutdown(void) { return false; }
 
 #endif

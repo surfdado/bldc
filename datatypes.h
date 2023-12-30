@@ -1150,11 +1150,17 @@ typedef enum {
 
 	COMM_LOG_DATA_F64,
 
+	COMM_LISP_6_05_PLACEHOLDER, // New command in 6.5
+
 	// PIN Lock to write-protect firmware
 	COMM_LOCK_SETPIN,
 	COMM_WRITE_LOCK,
 	COMM_LOCK_STATUS,
+
+	COMM_SHUTDOWN,
+
 	COMM_WRITE_UNLOCK_CMD,
+
 } COMM_PACKET_ID;
 
 // CAN commands
