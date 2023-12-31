@@ -33,6 +33,7 @@
 #include "mcpwm.h"
 #include "mcpwm_foc.h"
 #include "ledpwm.h"
+#include "buzzer.h"
 #include "comm_usb.h"
 #include "ledpwm.h"
 #include "terminal.h"
@@ -258,6 +259,7 @@ int main(void) {
 	INIT_BR();
 #endif
 
+	buzzer_init();
 	HW_EARLY_INIT();
 
 #ifdef BOOT_OK_GPIO
@@ -265,7 +267,9 @@ int main(void) {
 	palClearPad(BOOT_OK_GPIO, BOOT_OK_PIN);
 #endif
 
-	chThdSleepMilliseconds(100);
+	beep_on();
+	chThdSleepMilliseconds(50);
+	beep_off();
 
 	mempools_init();
 	events_init();
@@ -340,7 +344,7 @@ int main(void) {
 
 	imu_reset_orientation();
 
-	chThdSleepMilliseconds(500);
+	chThdSleepMilliseconds(100);
 	m_init_done = true;
 
 #ifdef BOOT_OK_GPIO
