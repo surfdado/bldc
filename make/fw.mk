@@ -136,6 +136,7 @@ CSRC = $(STARTUPSRC) \
        flash_helper.c \
        confgenerator.c \
        bms.c \
+       buzzer.c \
        events.c \
        $(HWSRC) \
        $(APPSRC) \
