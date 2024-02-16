@@ -276,7 +276,10 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if ((packet_id == COMM_CUSTOM_APP_DATA) && (len > 2)) {
 			unsigned char magicnr = data[0];
 			unsigned char floatcmd = data[1];
-			if ((magicnr == 101) && (floatcmd != 10) && (floatcmd > 1)) {
+			if ((magicnr == 101) && (floatcmd > 1)
+			    && (floatcmd != 10)        // FLOAT_COMMAND_GET_ALLDATA
+			    && (floatcmd != 24)        // FLOAT_COMMAND_LCM_POLL
+			    && (floatcmd != 28)) {     // FLOAT_COMMAND_CHARGESTATE
 				// reject any float command that isn't just reading rt data
 				return;
 			}
