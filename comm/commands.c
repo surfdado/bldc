@@ -318,7 +318,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			  //case COMM_DETECT_ENCODER:
 			  //case COMM_DETECT_HALL_FOC:
 			case COMM_REBOOT:
-			case COMM_ALIVE:
+			  //case COMM_ALIVE:
 			  //case COMM_GET_DECODED_PPM:
 			  //case COMM_GET_DECODED_ADC:
 			  //case COMM_GET_DECODED_CHUK:
