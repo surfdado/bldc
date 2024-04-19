@@ -58,6 +58,12 @@ void hw_init_gpio(void) {
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
 
+    // Lights - try to pull GPIOB-7 low to turn off lights (doesn't work)
+    palSetPadMode(GPIOB, 7,
+            PAL_MODE_OUTPUT_PUSHPULL |
+            PAL_STM32_OSPEED_HIGHEST);
+    palClearPad(GPIOB, 7);
+
 	// LEDs
 	palSetPadMode(LED_GREEN_GPIO, LED_GREEN_PIN,
 			PAL_MODE_OUTPUT_PUSHPULL |
