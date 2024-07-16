@@ -718,9 +718,9 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.mc_set_pid_speed = mc_interface_set_pid_speed;
 		cif.cif.mc_set_pid_pos = mc_interface_set_pid_pos;
 		cif.cif.mc_set_current = mc_interface_set_current;
-		cif.cif.mc_set_brake_current = mc_interface_set_brake_current;
+		cif.cif.mc_set_brake_current = mc_interface_brake_by_shorting_phases;
 		cif.cif.mc_set_current_rel = mc_interface_set_current_rel;
-		cif.cif.mc_set_brake_current_rel = mc_interface_set_brake_current_rel;
+		cif.cif.mc_set_brake_current_rel = mc_interface_brake_by_shorting_phases;
 		cif.cif.mc_set_handbrake = mc_interface_set_handbrake;
 		cif.cif.mc_set_handbrake_rel = mc_interface_set_handbrake_rel;
 		cif.cif.mc_set_tachometer_value = mc_interface_set_tachometer_value;

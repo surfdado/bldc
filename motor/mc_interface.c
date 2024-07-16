@@ -779,6 +779,17 @@ void mc_interface_set_handbrake_rel(float val) {
 	mc_interface_set_handbrake(val * fabsf(motor_now()->m_conf.lo_current_motor_min_now));
 }
 
+/**
+ * Applies brakes by shorting motor phases together.
+ * Implemented only in FOC control mode.
+ */
+void mc_interface_brake_by_shorting_phases() {
+	if (motor_now()->m_conf.motor_type != MOTOR_TYPE_FOC) {
+		return;
+	}
+	mcpwm_foc_brake_by_shorting_phases();
+}
+
 void mc_interface_set_openloop_current(float current, float rpm) {
 	if (fabsf(current) > 0.001) {
 		SHUTDOWN_RESET();

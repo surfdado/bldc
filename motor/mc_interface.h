@@ -51,6 +51,7 @@ void mc_interface_set_current_rel(float val);
 void mc_interface_set_brake_current_rel(float val);
 void mc_interface_set_handbrake(float current);
 void mc_interface_set_handbrake_rel(float val);
+void mc_interface_brake_by_shorting_phases(void);
 void mc_interface_set_openloop_current(float current, float rpm);
 void mc_interface_set_openloop_phase(float current, float phase);
 void mc_interface_set_openloop_duty(float dutyCycle, float rpm);
