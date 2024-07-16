@@ -62,6 +62,7 @@ static void terminal_plot_hfi(int argc, const char **argv);
 static void timer_update(motor_all_state_t *motor, float dt);
 static void input_current_offset_measurement( void );
 static void hfi_update(volatile motor_all_state_t *motor, float dt);
+static void brake_short_phases(motor_all_state_t *motor);
 
 // Threads
 static THD_WORKING_AREA(timer_thread_wa, 512);
@@ -815,6 +816,13 @@ void mcpwm_foc_set_brake_current(float current) {
 		get_motor_now()->m_motor_released = false;
 		get_motor_now()->m_state = MC_STATE_RUNNING;
 	}
+}
+
+/**
+ * Applies brakes by shorting the motor phases.
+ */
+void mcpwm_foc_brake_by_shorting_phases() {
+	brake_short_phases(get_motor_now());
 }
 
 /**
@@ -4448,6 +4456,37 @@ static void update_valpha_vbeta(motor_all_state_t *motor, float mod_alpha, float
 		state_m->v_beta *= ONE_BY_SQRT3;
 #endif
 	}
+}
+
+static void brake_short_phases(motor_all_state_t *motor) {
+	TIM_TypeDef * const timer = ((motor == &m_motor_1) ? TIM1 : TIM8);
+
+	utils_sys_lock_cnt();
+	// Disable the high FETs and turn on low side ones.
+	// Interestingly, when disabling the non-inverted channels, the inverted
+	// channels receive non-inverted signal. Hence the TIM_ForcedAction_Active command.
+	// See https://community.st.com/t5/stm32-mcus-products/stm32-timer-pwm-mode-strange-behaviour/m-p/366356/highlight/true#M96347
+	TIM_SelectOCxM(timer, TIM_Channel_1, TIM_ForcedAction_Active);
+	TIM_CCxCmd(timer, TIM_Channel_1, TIM_CCx_Disable);
+	TIM_CCxNCmd(timer, TIM_Channel_1, TIM_CCxN_Enable);
+
+	TIM_SelectOCxM(timer, TIM_Channel_2, TIM_ForcedAction_Active);
+	TIM_CCxCmd(timer, TIM_Channel_2, TIM_CCx_Disable);
+	TIM_CCxNCmd(timer, TIM_Channel_2, TIM_CCxN_Enable);
+
+	TIM_SelectOCxM(timer, TIM_Channel_3, TIM_ForcedAction_Active);
+	TIM_CCxCmd(timer, TIM_Channel_3, TIM_CCx_Disable);
+	TIM_CCxNCmd(timer, TIM_Channel_3, TIM_CCxN_Enable);
+
+	TIM_GenerateEvent(timer, TIM_EventSource_COM);
+
+	motor->m_state = MC_STATE_FULL_BRAKE;
+	motor->m_control_mode = CONTROL_MODE_NONE;
+	motor->m_output_on = false;
+	motor->m_id_set = 0.0;
+	motor->m_iq_set = 0.0;
+
+	utils_sys_unlock_cnt();
 }
 
 static void stop_pwm_hw(motor_all_state_t *motor) {
