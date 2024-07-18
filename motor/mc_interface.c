@@ -783,11 +783,20 @@ void mc_interface_set_handbrake_rel(float val) {
  * Applies brakes by shorting motor phases together.
  * Implemented only in FOC control mode.
  */
-void mc_interface_brake_by_shorting_phases() {
+void mc_interface_brake_by_shorting_phases(float current) {
+	if (mc_interface_try_input()) {
+		return;
+	}
 	if (motor_now()->m_conf.motor_type != MOTOR_TYPE_FOC) {
 		return;
 	}
-	mcpwm_foc_brake_by_shorting_phases();
+	if ((current != 0) && (fabsf(mc_interface_get_rpm()) < 2000)) {
+		mcpwm_foc_brake_by_shorting_phases();
+	}
+	else {
+		// fall back to safe alternative when the wheel is spinning
+		mc_interface_set_brake_current(current);
+	}
 }
 
 void mc_interface_set_openloop_current(float current, float rpm) {
@@ -955,7 +964,8 @@ bool mc_interface_wait_for_motor_release(float timeout) {
 
 	case MOTOR_TYPE_FOC:
 		while (UTILS_AGE_S(time_start) < timeout) {
-			if (mcpwm_foc_get_state() == MC_STATE_OFF) {
+			const mc_state state = mcpwm_foc_get_state();
+			if (state == MC_STATE_OFF || state == MC_STATE_FULL_BRAKE) {
 				res = true;
 				break;
 			}
