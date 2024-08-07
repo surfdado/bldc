@@ -71,6 +71,19 @@ static THD_FUNCTION(blocking_thread, arg);
 static THD_WORKING_AREA(blocking_thread_wa, 3000);
 static thread_t *blocking_tp;
 
+// PIN-Based Write-Lock
+static bool is_lock_initialized = false;
+static bool writelock = false;//true;
+static unsigned int writelock_pin = 0;
+static unsigned int writelock_pin_prev = 0;
+// Track last time there was a incorrect pin submitted to protect against bruteforce attemps.
+static systime_t writelock_last_failed_pin_attempt = 0;
+static unsigned int writelock_pin_attempt_cooldown=1000;
+static bool writelock_disabled_last_cmd = false;
+// Protect against stack based overflow in COMM_FORWARD_CAN and COMM_WRITE_UNLOCK_CMD
+static int recursion_depth = 0;
+static const int MAX_RECURSION_DEPTH = 5; // Set a limit for recursion depth
+
 // Private variables
 static char print_buffer[PRINT_BUFFER_SIZE];
 static uint8_t blocking_thread_cmd_buffer[PACKET_MAX_PL_LEN];
@@ -90,10 +103,18 @@ static volatile int fw_version_sent_cnt = 0;
 static bool is_initialized = false;
 static int nrf_flags = 0;
 
+// Static functions
+static void terminal_pin_unlock(int argc, const char **argv);
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&terminal_mutex);
 	chThdCreateStatic(blocking_thread_wa, sizeof(blocking_thread_wa), NORMALPRIO, blocking_thread, NULL);
+	terminal_register_command_callback(
+			"pin",
+			"Temporarily unlock PIN locked firmware",
+			"[PIN code]",
+			terminal_pin_unlock);
 	is_initialized = true;
 }
 
@@ -227,6 +248,219 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		send_func_can_fwd = reply_func;
 	}
 
+	if (commands_check_writelock()) {
+		if ((packet_id != COMM_FW_VERSION) &&
+			(packet_id != COMM_GET_MCCONF) &&
+			(packet_id != COMM_GET_APPCONF) &&
+			(packet_id != COMM_GET_VALUES) &&
+			(packet_id != COMM_GET_VALUES_SETUP) &&
+			(packet_id != COMM_GET_VALUES_SELECTIVE) &&
+			(packet_id != COMM_GET_VALUES_SETUP_SELECTIVE) &&
+			(packet_id != COMM_GET_DECODED_BALANCE) &&
+			(packet_id != COMM_GET_STATS) &&
+			(packet_id != COMM_RESET_STATS) &&
+			(packet_id != COMM_SET_ODOMETER) &&
+			(packet_id != COMM_GET_CUSTOM_CONFIG) &&
+			(packet_id != COMM_CUSTOM_APP_DATA) &&
+			(packet_id != COMM_LOCK_STATUS) &&
+			(packet_id != COMM_GET_QML_UI_HW) &&
+		        (packet_id != COMM_GET_QML_UI_APP) &&
+		        (packet_id != COMM_BMS_GET_VALUES) &&
+			(packet_id != COMM_CUSTOM_HW_DATA) &&
+			(packet_id != COMM_WRITE_LOCK) &&
+			(packet_id != COMM_WRITE_UNLOCK_CMD)) {
+			//commands_printf("Blocked command: ID %d\n", packet_id);
+			return;
+		}
+		if (writelock && (packet_id == COMM_SET_ODOMETER)) {
+		  // Temporary back door, to allow unlocking from older VESC Tools...
+		  int32_t ind = 1;
+		  uint32_t odo_new = buffer_get_uint32(data, &ind);
+		  uint32_t odo_now = mc_interface_get_odometer() + 1000;
+		  // Writing the current odometer value removes the writelock
+		  if (abs(odo_now-odo_new) < 2000) {
+		    // the VESC App only allows setting of odometer in km/mi not in meters
+		    writelock = false;
+		  }
+		  return;
+		}
+		if ((packet_id == COMM_CUSTOM_APP_DATA) && (len > 2)) {
+			unsigned char magicnr = data[0];
+			unsigned char floatcmd = data[1];
+			if ((magicnr == 101) && (floatcmd > 1)
+			    && (floatcmd != 10)        // FLOAT_COMMAND_GET_ALLDATA
+			    && (floatcmd != 24)        // FLOAT_COMMAND_LCM_POLL
+			    && (floatcmd != 28)) {     // FLOAT_COMMAND_CHARGESTATE
+				// reject any float command that isn't just reading rt data
+				return;
+			}
+		}
+
+	}
+	if (fabsf(mc_interface_get_rpm()) > 100) {
+		switch (packet_id) {
+		  //case COMM_FW_VERSION = 0,
+			case COMM_JUMP_TO_BOOTLOADER:
+			case COMM_ERASE_NEW_APP:
+			case COMM_WRITE_NEW_APP_DATA:
+			  //case COMM_GET_VALUES:
+			  //case COMM_SET_DUTY:
+			  //case COMM_SET_CURRENT:
+			  //case COMM_SET_CURRENT_BRAKE:
+			  //case COMM_SET_RPM:
+			  //case COMM_SET_POS:
+			  //case COMM_SET_HANDBRAKE:
+			  //case COMM_SET_DETECT:
+			  //case COMM_SET_SERVO_POS:
+			case COMM_SET_MCCONF:
+			  //case COMM_GET_MCCONF:
+			  //case COMM_GET_MCCONF_DEFAULT:
+			case COMM_SET_APPCONF:
+			  //case COMM_GET_APPCONF:
+			  //case COMM_GET_APPCONF_DEFAULT:
+			  //case COMM_SAMPLE_PRINT:
+			  //case COMM_TERMINAL_CMD:
+			  //case COMM_PRINT:
+			case COMM_ROTOR_POSITION:
+			case COMM_EXPERIMENT_SAMPLE:
+			  //case COMM_DETECT_MOTOR_PARAM:
+			  //case COMM_DETECT_MOTOR_R_L:
+			  //case COMM_DETECT_MOTOR_FLUX_LINKAGE:
+			  //case COMM_DETECT_ENCODER:
+			  //case COMM_DETECT_HALL_FOC:
+			case COMM_REBOOT:
+			  //case COMM_ALIVE:
+			  //case COMM_GET_DECODED_PPM:
+			  //case COMM_GET_DECODED_ADC:
+			  //case COMM_GET_DECODED_CHUK:
+			  //case COMM_FORWARD_CAN:
+			  //case COMM_SET_CHUCK_DATA:
+			  //case COMM_CUSTOM_APP_DATA:
+			  //case COMM_NRF_START_PAIRING:
+			  //case COMM_GPD_SET_FSW:
+			  //case COMM_GPD_BUFFER_NOTIFY:
+			  //case COMM_GPD_BUFFER_SIZE_LEFT:
+			  //case COMM_GPD_FILL_BUFFER:
+			  //case COMM_GPD_OUTPUT_SAMPLE:
+			  //case COMM_GPD_SET_MODE:
+			  //case COMM_GPD_FILL_BUFFER_INT8:
+			  //case COMM_GPD_FILL_BUFFER_INT16:
+			  //case COMM_GPD_SET_BUFFER_INT_SCALE:
+			  //case COMM_GET_VALUES_SETUP:
+			case COMM_SET_MCCONF_TEMP:
+			case COMM_SET_MCCONF_TEMP_SETUP:
+			  //case COMM_GET_VALUES_SELECTIVE:
+			  //case COMM_GET_VALUES_SETUP_SELECTIVE:
+			  //case COMM_EXT_NRF_PRESENT:
+			  //case COMM_EXT_NRF_ESB_SET_CH_ADDR:
+			  //case COMM_EXT_NRF_ESB_SEND_DATA:
+			  //case COMM_EXT_NRF_ESB_RX_DATA:
+			  //case COMM_EXT_NRF_SET_ENABLED:
+			case COMM_DETECT_MOTOR_FLUX_LINKAGE_OPENLOOP:
+			case COMM_DETECT_APPLY_ALL_FOC:
+			case COMM_JUMP_TO_BOOTLOADER_ALL_CAN:
+			case COMM_ERASE_NEW_APP_ALL_CAN:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN:
+			  //case COMM_PING_CAN:
+			  //case COMM_APP_DISABLE_OUTPUT:
+			  //case COMM_TERMINAL_CMD_SYNC:
+			  //case COMM_GET_IMU_DATA:
+			  //case COMM_BM_CONNECT:
+			case COMM_BM_ERASE_FLASH_ALL:
+			case COMM_BM_WRITE_FLASH:
+			case COMM_BM_REBOOT:
+			case COMM_BM_DISCONNECT:
+			case COMM_BM_MAP_PINS_DEFAULT:
+			case COMM_BM_MAP_PINS_NRF5X:
+			case COMM_ERASE_BOOTLOADER:
+			case COMM_ERASE_BOOTLOADER_ALL_CAN:
+			  //case COMM_PLOT_INIT:
+			  //case COMM_PLOT_DATA:
+			  //case COMM_PLOT_ADD_GRAPH:
+			  //case COMM_PLOT_SET_GRAPH:
+			  //case COMM_GET_DECODED_BALANCE:
+			  //case COMM_BM_MEM_READ:
+			case COMM_WRITE_NEW_APP_DATA_LZO:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN_LZO:
+			case COMM_BM_WRITE_FLASH_LZO:
+			  //case COMM_SET_CURRENT_REL:
+			  //case COMM_CAN_FWD_FRAME:
+			  //case COMM_SET_BATTERY_CUT:
+			  //case COMM_SET_BLE_NAME:
+			  //case COMM_SET_BLE_PIN:
+			  //case COMM_SET_CAN_MODE:
+			  //case COMM_GET_IMU_CALIBRATION:
+			  //case COMM_GET_MCCONF_TEMP:
+			  //case COMM_GET_CUSTOM_CONFIG_XML:
+			  //case COMM_GET_CUSTOM_CONFIG:
+			  //case COMM_GET_CUSTOM_CONFIG_DEFAULT:
+			  //case COMM_SET_CUSTOM_CONFIG:
+			  //case COMM_BMS_GET_VALUES:
+			  //case COMM_BMS_SET_CHARGE_ALLOWED:
+			  //case COMM_BMS_SET_BALANCE_OVERRIDE:
+			  //case COMM_BMS_RESET_COUNTERS:
+			  //case COMM_BMS_FORCE_BALANCE:
+			  //case COMM_BMS_ZERO_CURRENT_OFFSET:
+			case COMM_JUMP_TO_BOOTLOADER_HW:
+			case COMM_ERASE_NEW_APP_HW:
+			case COMM_WRITE_NEW_APP_DATA_HW:
+			case COMM_ERASE_BOOTLOADER_HW:
+			case COMM_JUMP_TO_BOOTLOADER_ALL_CAN_HW:
+			case COMM_ERASE_NEW_APP_ALL_CAN_HW:
+			case COMM_WRITE_NEW_APP_DATA_ALL_CAN_HW:
+			case COMM_ERASE_BOOTLOADER_ALL_CAN_HW:
+			  //case COMM_SET_ODOMETER:
+			  //case COMM_PSW_GET_STATUS:
+			  //case COMM_PSW_SWITCH:
+			  //case COMM_BMS_FWD_CAN_RX:
+			  //case COMM_BMS_HW_DATA:
+			  //case COMM_GET_BATTERY_CUT:
+			case COMM_BM_HALT_REQ:
+			  //case COMM_GET_QML_UI_HW:
+			  //case COMM_GET_QML_UI_APP:
+			  //case COMM_CUSTOM_HW_DATA:
+			case COMM_QMLUI_ERASE:
+			case COMM_QMLUI_WRITE:
+			  //case COMM_IO_BOARD_GET_ALL:
+			  //case COMM_IO_BOARD_SET_PWM:
+			  //case COMM_IO_BOARD_SET_DIGITAL:
+			case COMM_BM_MEM_WRITE:
+			case COMM_BMS_BLNC_SELFTEST:
+			  //case COMM_GET_EXT_HUM_TMP:
+			  //case COMM_GET_STATS:
+			  //case COMM_RESET_STATS:
+			  //case COMM_LISP_READ_CODE:
+			case COMM_LISP_WRITE_CODE:
+			case COMM_LISP_ERASE_CODE:
+			case COMM_LISP_SET_RUNNING:
+			  //case COMM_LISP_GET_STATS:
+			  //case COMM_LISP_PRINT:
+			  //case COMM_BMS_SET_BATT_TYPE:
+			  //case COMM_BMS_GET_BATT_TYPE:
+			  //case COMM_LISP_REPL_CMD:
+			  //case COMM_LISP_STREAM_CODE:
+			  //case COMM_FILE_LIST:
+			  //case COMM_FILE_READ:
+			  //case COMM_FILE_WRITE:
+			  //case COMM_FILE_MKDIR:
+			  //case COMM_FILE_REMOVE:
+			  //case COMM_LOG_START:
+			  //case COMM_LOG_STOP:
+			  //case COMM_LOG_CONFIG_FIELD:
+			  //case COMM_LOG_DATA_F32:
+			case COMM_SET_APPCONF_NO_STORE:
+			  //case COMM_GET_GNSS:
+			  //case COMM_LOG_DATA_F64:
+			  //case COMM_LOCK_SETPIN:
+		       	  //case COMM_WRITE_LOCK:
+			  //case COMM_LOCK_STATUS:
+			case COMM_SHUTDOWN:
+			  return; // reject command while motor is running
+
+			default: ;// do nothing
+		}
+	}
+
 	switch (packet_id) {
 	case COMM_FW_VERSION: {
 		int32_t ind = 0;
@@ -322,6 +556,8 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			nrf_driver_pause(6000);
 		}
 		uint16_t flash_res = flash_helper_erase_new_app(buffer_get_uint32(data, &ind));
+               // For now, erase the PIN as well - in the future we may want to let the PIN persist
+               conf_general_set_writelock_pin(0, false);
 
 		ind = 0;
 		uint8_t send_buffer[50];
@@ -1590,6 +1826,151 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		}
 	} break;
 
+	case COMM_WRITE_LOCK: {
+		int32_t ind = 0;
+		if (len >= 3) {
+			uint8_t magic_number = data[ind++];
+			uint32_t pin = buffer_get_uint16(data, &ind);
+			uint8_t lock_enable = data[ind++];
+			systime_t current_time = chVTGetSystemTimeX();
+			if ((magic_number == 169) && (pin == writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
+				writelock = (lock_enable && pin>0) ? true : false;
+				writelock_last_failed_pin_attempt = 0;
+				writelock_disabled_last_cmd=!writelock;
+				break;
+			}	
+			if(pin != writelock_pin_prev)
+			{
+				writelock_pin_attempt_cooldown*=2;
+				writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+			}
+			writelock_pin_prev = pin;
+		}
+			// Sends no response - call COMM_LOCK_STATUS to check success/fail
+	} break;
+
+	case COMM_LOCK_SETPIN: {
+		if (len >= 6) {
+			int32_t ind = 0;
+			uint8_t magic_number = data[ind++];
+			uint32_t old_pin = buffer_get_uint16(data, &ind);
+			uint32_t new_pin = buffer_get_uint16(data, &ind);
+			bool lock_on_boot = (data[ind++] == 1);
+
+			if (magic_number == 169) {
+				int didset = 0;
+				systime_t current_time = chVTGetSystemTimeX();
+				if (old_pin == writelock_pin && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
+					// write new pin to eeprom
+					conf_general_set_writelock_pin(new_pin, lock_on_boot);
+					writelock_pin = conf_general_get_writelock_pin();
+					// when lock_on_boot is set, we immediately enable writelock
+					writelock = (writelock_pin > 0) && lock_on_boot;
+					didset = 1;
+					writelock_last_failed_pin_attempt = 0;
+			  	}
+			  else {
+			    new_pin = 0;
+				if(old_pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = old_pin;
+			  }
+			  ind = 0;
+
+			  // Respond to confirm whether pin has indeed been accepted
+			  uint8_t send_buffer[10];
+			  send_buffer[ind++] = packet_id;
+			  send_buffer[ind++] = 169;			// magic number!
+			  send_buffer[ind++] = didset;			// if 0 it means old PIN didn't match
+			  send_buffer[ind++] = (new_pin >> 8) & 0xFF;	// return the newly set pin...
+			  send_buffer[ind++] = new_pin & 0xFF;
+			  reply_func(send_buffer, ind);
+			}
+		}
+	} break;
+
+	case COMM_LOCK_STATUS: {
+		int32_t ind = 0;
+		// receive 1-byte magic number and 2-byte PIN code
+		uint8_t magic_number = data[ind++];
+		uint32_t pin = buffer_get_uint16(data, &ind);
+
+		if (magic_number == 169) {
+			ind = 0;
+			uint8_t send_buffer[10];
+			send_buffer[ind++] = packet_id;
+			send_buffer[ind++] = 169;			// magic number!
+			send_buffer[ind++] = writelock;			// is writelock currently in place?
+			systime_t current_time = chVTGetSystemTimeX();
+			if(writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown)){
+				send_buffer[ind++] = (pin == writelock_pin);	// does the passed pin match?
+				writelock_last_failed_pin_attempt = 0;
+			}
+			else
+			{
+				send_buffer[ind++] = 0;	// protection against bruteforce attacks
+				if(pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = pin;
+			}
+			send_buffer[ind++] = (writelock_pin != 0);	// is a pin set?
+			send_buffer[ind++] = conf_general_is_locked_on_boot();
+
+			// TEMPORARY: for development only, pass the stored pin (obviously unsafe!)
+			send_buffer[ind++] = (writelock_pin >> 8) & 0xFF;
+			send_buffer[ind++] = writelock_pin & 0xFF;
+			reply_func(send_buffer, ind);
+		}
+	} break;
+
+	//Allows a command to be called while writelock is enabled by passing in the pin and command to be run.
+	case COMM_WRITE_UNLOCK_CMD:{
+		if (len <= 2 || recursion_depth >= MAX_RECURSION_DEPTH) {
+        	// Base case: Not enough data to process or max recursion depth reached
+        	recursion_depth = 0; // Reset recursion depth
+        	return;
+		}
+		int32_t ind = 0;
+		uint32_t pin = buffer_get_uint16(data, &ind);
+		if(writelock){
+			systime_t current_time = chVTGetSystemTimeX();
+			if(pin == writelock_pin && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))){
+				writelock=false;
+				writelock_disabled_last_cmd=false;
+				recursion_depth++;
+				commands_process_packet(data + 2, len - 2, reply_func);
+				recursion_depth--;
+				if(!writelock_disabled_last_cmd) //special case if we call COMM_WRITE_LOCK and disable the lock
+				{
+					writelock=true;
+				}
+				writelock_disabled_last_cmd=false;
+				writelock_last_failed_pin_attempt = 0;
+			}
+			else
+			{
+				// Sends no response - call COMM_LOCK_STATUS to check success/fail
+				if(pin != writelock_pin_prev)
+				{
+					writelock_pin_attempt_cooldown*=2;
+					writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+				}
+				writelock_pin_prev = pin;
+			} 
+			break;
+		}
+		//process the command as normal if writelock isn't enabled
+		recursion_depth++;
+		commands_process_packet(data + 2, len - 2, reply_func);
+		recursion_depth--;
+	 } break;
+
 	// Blocking commands. Only one of them runs at any given time, in their
 	// own thread. If other blocking commands come before the previous one has
 	// finished, they are discarded.
@@ -2376,6 +2757,50 @@ static THD_FUNCTION(blocking_thread, arg) {
 		default:
 			break;
 		}
+	}
+}
+
+void commands_lock_writes(bool lock)
+{
+	if (lock && (writelock_pin > 0)) {
+		writelock = true;
+	}
+	if (!lock) {
+		writelock = false;
+	}
+}
+
+bool commands_check_writelock()
+{
+	if (!is_lock_initialized) {
+		// load PIN from EEPROM and lock if lock-on-boot is set
+		writelock_pin = conf_general_get_writelock_pin();
+		writelock = conf_general_is_locked_on_boot();
+		is_lock_initialized = true;
+		
+	}
+	return writelock;
+}
+
+static void terminal_pin_unlock(int argc, const char **argv) {
+	if (argc == 2) {
+		int pin = 0;
+		sscanf(argv[1], "%d", &pin);
+		systime_t current_time = chVTGetSystemTimeX();
+		if ((pin == (int)writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
+			writelock = false;
+			writelock_last_failed_pin_attempt = 0;
+			writelock_disabled_last_cmd=!writelock;
+			commands_printf("PIN lock temporarily disabled.\n");
+			return;
+		}
+		if(pin != (int)writelock_pin_prev) {
+			writelock_pin_attempt_cooldown*=2;
+			writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+		}
+		writelock_pin_prev = pin;
+	} else {
+		commands_printf("This command requires one argument.\n");
 	}
 }
 
