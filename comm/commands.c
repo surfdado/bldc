@@ -949,12 +949,19 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 	} break;
 
 	case COMM_FORWARD_CAN: {
+		if (len <= 1 || recursion_depth >= MAX_RECURSION_DEPTH) {
+        	// Base case: Not enough data to process or max recursion depth reached
+        	recursion_depth = 0; // Reset recursion depth
+        	return;
+		}
 		send_func_can_fwd = reply_func;
 
 #ifdef HW_HAS_DUAL_MOTORS
 		if (data[0] == utils_second_motor_id()) {
 			mc_interface_select_motor_thread(2);
+			recursion_depth++;
 			commands_process_packet(data + 1, len - 1, reply_func);
+			recursion_depth--;
 			mc_interface_select_motor_thread(1);
 		} else {
 			comm_can_send_buffer(data[0], data + 1, len - 1, 0);
