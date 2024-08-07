@@ -43,7 +43,7 @@
 #error "No hardware name set"
 #endif
 
-#define FW_NAME "X"
+#define FW_NAME "LCKX"
 
 #ifndef FW_NAME
 #ifdef DISABLE_HW_LIMITS

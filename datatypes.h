@@ -1116,10 +1116,10 @@ typedef enum {
 
 	COMM_LISP_RMSG							= 152,
 
-	//Placeholders for pinlock commands
-	//COMM_PINLOCK1							= 153,
-	//COMM_PINLOCK2							= 154,
-	//COMM_PINLOCK3							= 155,
+	// PIN Lock to write-protect firmware
+	COMM_LOCK_SETPIN                        = 153,
+	COMM_WRITE_LOCK                         = 154,
+	COMM_LOCK_STATUS                        = 155,
 
 	COMM_SHUTDOWN							= 156,
 	
@@ -1128,6 +1128,9 @@ typedef enum {
 	COMM_CAN_UPDATE_BAUD_ALL				= 158,
 
 	COMM_MOTOR_ESTOP						= 159,
+
+	// Pass-thru command similar to CAN_FORWARD - unlock for a single command
+	COMM_WRITE_UNLOCK_CMD                   = 200,
 } COMM_PACKET_ID;
 
 // CAN commands
@@ -1453,6 +1456,10 @@ typedef struct __attribute__((packed)) {
 	uint8_t can_id;
 
 	uint8_t dummy;
+
+	uint32_t writelock_pin_init_flag;
+	uint32_t writelock_pin_code;
+
 } backup_data;
 
 #endif /* DATATYPES_H_ */

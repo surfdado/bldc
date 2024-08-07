@@ -139,6 +139,10 @@ __attribute__((section(".text2"))) void conf_general_init(void) {
 		} else {
 			backup_tmp.can_baud = APPCONF_CAN_BAUD_RATE;
 			backup_tmp.can_id = HW_DEFAULT_ID;
+        }
+
+		if (g_backup.writelock_pin_init_flag == BACKUP_VAR_INIT_CODE) {
+			backup_tmp.writelock_pin_code = g_backup.writelock_pin_code;
 		}
 	}
 
@@ -147,6 +151,7 @@ __attribute__((section(".text2"))) void conf_general_init(void) {
 	backup_tmp.hw_config_init_flag = BACKUP_VAR_INIT_CODE;
 	backup_tmp.enc_corr_init_flag = BACKUP_VAR_INIT_CODE;
 	backup_tmp.can_init_flag = BACKUP_VAR_INIT_CODE;
+	backup_tmp.writelock_pin_init_flag = BACKUP_VAR_INIT_CODE;
 
 	g_backup = backup_tmp;
 	conf_general_store_backup_data();
@@ -2279,4 +2284,40 @@ int conf_general_detect_apply_all_foc_can(bool detect_can, float max_power_loss,
 	mc_interface_select_motor_thread(motor_last);
 
 	return res;
+}
+
+#define WRITELOCK_PIN_MAGIC_NR 169
+
+uint16_t conf_general_get_writelock_pin()
+{
+	uint32_t pin = g_backup.writelock_pin_code;
+	uint32_t magicnr = (pin >> 16) & 0x7FFF;
+
+	// return pin provided the magic number (upper 16bit) matches
+	if (magicnr == WRITELOCK_PIN_MAGIC_NR) {
+		return (uint16_t)pin & 0xFFFF;
+	}
+	return 0;
+}
+
+bool conf_general_is_locked_on_boot()
+{
+	uint32_t pin = g_backup.writelock_pin_code;
+	uint32_t magicnr = (pin >> 16) & 0x7FFF;
+
+	// return pin provided the magic number (upper 16bit) matches
+	if (magicnr == WRITELOCK_PIN_MAGIC_NR) {
+		return ((pin & 0x80000000) != 0);
+	}
+	return 0;
+}
+
+void conf_general_set_writelock_pin(uint16_t pin, bool lock_on_boot)
+{
+	g_backup.writelock_pin_code = (WRITELOCK_PIN_MAGIC_NR << 16) + pin;
+	if (lock_on_boot && (pin > 0)) {
+		// BIT31 indicates the board should be locked on boot
+		g_backup.writelock_pin_code |= 1 << 31;
+	}
+	conf_general_store_backup_data();
 }
