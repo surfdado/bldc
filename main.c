@@ -268,7 +268,7 @@ int main(void) {
 #endif
 
 	beep_on();
-	chThdSleepMilliseconds(50);
+	chThdSleepMilliseconds(20);
 	beep_off();
 
 	mempools_init();
