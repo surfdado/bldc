@@ -96,7 +96,8 @@ help:
 	@echo "                            supported boards are: $(ALL_BOARD_NAMES)"
 	@echo "     fw_<board>           - Build firmware for target <board>"
 	@echo "     PROJECT=<target> fw  - Build firmware for <target>"
-	@echo "     fw_<board>_clean     - Remove firmware for <board>"
+	@echo "     fw_<board>_clean     - Clean firmware folder for <board>"
+	@echo "     fw_<board>_distclean - Remove firmware for <board>"
 	@echo "     fw_<board>_flash     - Use OpenOCD + SWD/JTAG to write firmware to <target>"
 	@echo ""
 	@echo "     fw_custom            - Build firmware with custom hwconf file locations, you must specify these by setting the HW_SRC and HW_HEADER variables"
@@ -197,6 +198,19 @@ fw_$(1)_clean: OUTDIR=$(BUILD_DIR)/$$(TARGET)
 fw_$(1)_clean:
 	$(V0) @echo " CLEAN      $$@"
 ifneq ($(OSFAMILY), windows)
+	$(RM) -rf "$(BUILD_DIR)/$(1)/lst" "$(BUILD_DIR)/$(1)/obj" "$(BUILD_DIR)/$(1)/$(1).dmp" "$(BUILD_DIR)/$(1)/$(1).elf" "$(BUILD_DIR)/$(1)/$(1).hex" "$(BUILD_DIR)/$(1)/$(1).list" "$(BUILD_DIR)/$(1)/$(1).map" "$(BUILD_DIR)/$(1)/.dep"
+else
+	$(V1) powershell -noprofile -command "& {if (Test-Path $(BUILD_DIR)/$(1)) {Remove-Item -Recurse $(BUILD_DIR)/$(1)}}"
+	$(V1) powershell -noprofile -command "& {if (Test-Path $(ROOT_DIR)/.dep) {Remove-Item -Recurse $(ROOT_DIR)/.dep}}"
+endif
+
+.PHONY: $(1)_distclean
+$(1)_distclean: fw_$(1)_distclean
+fw_$(1)_distclean: TARGET=fw_$(1)
+fw_$(1)_distclean: OUTDIR=$(BUILD_DIR)/$$(TARGET)
+fw_$(1)_distclean:
+	$(V0) @echo " DIST CLEAN      $$@"
+ifneq ($(OSFAMILY), windows)
 	$(V1) [ ! -d "$(BUILD_DIR)/$(1)" ] || $(RM) -r "$(BUILD_DIR)/$(1)"
 	$(V1) [ ! -d "$(ROOT_DIR)/.dep" ] || $(RM) -r "$(ROOT_DIR)/.dep"
 else
@@ -248,9 +262,10 @@ erase_qml:
 # Generate the targets for whatever boards are in each list
 FW_TARGETS := $(addprefix fw_, $(ALL_BOARD_NAMES))
 
-.PHONY: all_fw all_fw_clean
+.PHONY: all_fw all_fw_clean all_fw_distclean
 all_fw:        $(addsuffix _vescfw, $(FW_TARGETS))
 all_fw_clean:  $(addsuffix _clean,  $(FW_TARGETS))
+all_fw_distclean:  $(addsuffix _distclean,  $(FW_TARGETS))
 
 # Expand the firmware rules
 $(foreach board, $(ALL_BOARD_NAMES), $(eval $(call FW_TEMPLATE,$(board),$(BUILD_DIR)/$(board),$(board),$(GIT_BRANCH_NAME),$(GIT_COMMIT_HASH)$(GIT_DIRTY_LABEL),$(ARM_GCC_VERSION),,)))
