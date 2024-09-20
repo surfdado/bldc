@@ -268,7 +268,7 @@ int main(void) {
 #endif
 
 	beep_on();
-	chThdSleepMilliseconds(50);
+	chThdSleepMilliseconds(20);
 	beep_off();
 
 	mempools_init();
@@ -292,6 +292,9 @@ int main(void) {
 
 	ledpwm_init();
 	mc_interface_init();
+#ifdef LED_PWM1_ON
+    ledpwm_set_intensity(LED_HW1, 1.0);
+#endif
 
 	commands_init();
 
