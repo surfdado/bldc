@@ -47,7 +47,7 @@ static const I2CConfig i2cfg = {
 #define EXT_BUZZER_ON()    palSetPad(HW_ICU_GPIO, HW_ICU_PIN)
 #define EXT_BUZZER_OFF()   palClearPad(HW_ICU_GPIO, HW_ICU_PIN)
 
-void buzzer_init(void) {
+void hw_Thor_buzzer_init(void) {
     // External Buzzer (using servo pin!)
     palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN,
                   PAL_MODE_OUTPUT_PUSHPULL |
@@ -306,6 +306,10 @@ void hw_try_restore_i2c(void) {
  */
 
 bool hw_sample_shutdown_button(void) {
+#ifdef THOR_ALWAYS_ON
+    return true;
+#endif
+
     chMtxLock(&shutdown_mutex);
     float newval = ADC_VOLTS(ADC_IND_SHUTDOWN);
     chMtxUnlock(&shutdown_mutex);
