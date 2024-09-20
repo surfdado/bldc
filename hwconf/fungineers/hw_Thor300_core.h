@@ -251,8 +251,8 @@
 // Functions
 float hw_Thor_get_temp(void);
 bool hw_sample_shutdown_button(void);
-void buzzer_init(void);
+void hw_Thor_buzzer_init(void);
 
-#define HW_EARLY_INIT()    buzzer_init()
+#define HW_EARLY_INIT()    hw_Thor_buzzer_init()
 
 #endif /* HW_Thor300_Core_H_ */
