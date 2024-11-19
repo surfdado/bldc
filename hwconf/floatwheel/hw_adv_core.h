@@ -83,10 +83,18 @@
 
 // Component parameters (can be overridden)
 #ifndef V_REG
+#ifdef ADV200
 #define V_REG                   3.3
+#else
+#define V_REG                   3.288
+#endif
 #endif
 #ifndef VIN_R1
+#ifdef ADV200
 #define VIN_R1                  68000.0
+#else
+#define VIN_R1                  110000.0
+#endif
 #endif
 #ifndef VIN_R2
 #define VIN_R2                  2200.0
