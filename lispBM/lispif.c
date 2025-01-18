@@ -36,7 +36,7 @@
 #define LBM_MEMORY_SIZE_18K LBM_MEMORY_SIZE_64BYTES_TIMES_X(256 + 32)
 #define LBM_MEMORY_BITMAP_SIZE_18K LBM_MEMORY_BITMAP_SIZE(256 + 32)
 
-#define HEAP_SIZE					(2048 + 256 + 160)
+#define HEAP_SIZE					(768 + 256 + 160)
 #define LISP_MEM_SIZE				LBM_MEMORY_SIZE_18K
 #define LISP_MEM_BITMAP_SIZE		LBM_MEMORY_BITMAP_SIZE_18K
 #define GC_STACK_SIZE				160
@@ -45,11 +45,11 @@
 #define EXT_LOAD_CALLBACK_LEN		20
 #define PROF_DATA_NUM				30
 
-__attribute__((section(".ram4"))) static lbm_cons_t heap[HEAP_SIZE] __attribute__ ((aligned (8)));
+static lbm_cons_t heap[HEAP_SIZE] __attribute__ ((aligned (8)));
 static uint32_t memory_array[LISP_MEM_SIZE];
-__attribute__((section(".ram4"))) static uint32_t bitmap_array[LISP_MEM_BITMAP_SIZE];
-__attribute__((section(".ram4"))) static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE];
-__attribute__((section(".ram4"))) static lbm_prof_t prof_data[PROF_DATA_NUM];
+static uint32_t bitmap_array[LISP_MEM_BITMAP_SIZE];
+ static lbm_extension_t extension_storage[EXTENSION_STORAGE_SIZE];
+ static lbm_prof_t prof_data[PROF_DATA_NUM];
 static volatile bool prof_running = false;
 
 static lbm_string_channel_state_t string_tok_state;

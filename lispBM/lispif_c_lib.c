@@ -68,8 +68,14 @@ static bool lib_init_done = false;
 
 __attribute__((section(".libif"))) static volatile union {
 	vesc_c_if cif;
-	char pad[2048];
+	char pad[2036];
 } cif;
+
+__attribute__((section(".databuf"))) static volatile struct {
+	uint32_t magic;
+	uint8_t *buffer;
+	size_t length;
+} databuf;
 
 static thread_t* lib_running_threads[20];
 static size_t lib_running_threads_cnt = 0;
@@ -697,7 +703,7 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[0]);
 
 	if (!lib_init_done) {
-		memset((char*)cif.pad, 0, 2048);
+		memset((char*)cif.pad, 0, sizeof(cif));
 
 		// LBM
 		cif.cif.lbm_add_extension = lib_add_extension;
@@ -1024,6 +1030,14 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		cif.cif.sem_reset = lib_sem_reset;
 
 		lib_init_done = true;
+
+		extern uint8_t __databuf_base__[];
+		extern uint8_t __databuf_end__[];
+
+		// magic number for safety check, points to unused memory on STM32F40xxx
+		databuf.magic = 0xcafe1111;
+		databuf.buffer = (uint8_t *)MEM_ALIGN_NEXT(__databuf_base__);
+		databuf.length = (uint8_t *)MEM_ALIGN_PREV(__databuf_end__) - databuf.buffer;
 	}
 
 	uint32_t addr = (uint32_t)array->data;

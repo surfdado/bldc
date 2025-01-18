@@ -33,7 +33,8 @@ MEMORY
     ram2  : org = 0x2001C000, len = 16k     /* SRAM2 */
     ram3  : org = 0x00000000, len = 0
     ram4  : org = 0x10000000, len = 62k     /* CCM SRAM */
-    libif : org = 0x1000F800, len = 2k
+    libif : org = 0x1000F800, len = 2036
+    databuf : org = 0x1000FFF4, len = 12
     ram5  : org = 0x40024000, len = 4k      /* BCKP SRAM */
     ram6  : org = 0x00000000, len = 0
     ram7  : org = 0x00000000, len = 0
@@ -247,6 +248,12 @@ SECTIONS
         *(.libif)
     } > libif
 
+    .databuf (NOLOAD) : ALIGN(4)
+    {
+        . = ALIGN(4);
+        *(.databuf)
+    } > databuf
+
     .ram5 (NOLOAD) : ALIGN(4)
     {
         . = ALIGN(4);
@@ -279,3 +286,7 @@ SECTIONS
    of ram0 region.*/
 __heap_base__   = __ram0_free__;
 __heap_end__    = __ram0_end__;
+
+/* Static buffer for data recording */
+__databuf_base__ = __ram4_free__;
+__databuf_end__ = __ram4_end__;
