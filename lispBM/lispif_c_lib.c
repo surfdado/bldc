@@ -548,6 +548,15 @@ static bool lib_set_cfg_float(CFG_PARAM p, float value) {
 		default: break;
 	}
 
+	if (p > 100) {
+		// don't write configs back to persistent storage, just apply the change now
+		int pp = p - 100;
+		switch (pp) {
+		case CFG_PARAM_l_min_erpm: mcconf->l_min_erpm = value; res = true; break;
+		case CFG_PARAM_l_max_erpm: mcconf->l_max_erpm = value; res = true; break;
+		}
+	}
+
 	if (changed_mc > 0) {
 		commands_apply_mcconf_hw_limits(mcconf);
 	}
