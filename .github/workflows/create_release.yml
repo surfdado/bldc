@@ -1,0 +1,52 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+*'
+
+jobs:
+  create_release:
+    name: Create Release
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Version
+        run: |
+          TAG="${{github.ref_name}}"
+          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+          CONTROLLERS="ENNOID_150V_mk8 JetFleetF6 Little_FOCer Little_FOCer_V3 Little_FOCer_V3_1 Little_FOCer_V4 TRONIC_250R Thor300_20s ubox_single_100 ubox_single_75 ubox_single_80 ubox_single_85_200"
+          echo "CONTROLLERS=${CONTROLLERS}" >> $GITHUB_ENV
+          ARTIFACTS=""
+          for C in $CONTROLLERS; do
+            ARTIFACTS+="$C.bin,";
+          done
+          echo "ARTIFACTS=${ARTIFACTS::-1}" >> $GITHUB_ENV
+
+      - name: Install Arm GNU Toolchain (arm-none-eabi-gcc)
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '10.3-2021.10'
+
+      - name: Build
+        run: make -j ${{env.CONTROLLERS}}
+
+      - name: Move Targets
+        run: |
+          for C in $CONTROLLERS; do
+            mv build/$C/$C.bin .;
+          done
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{github.ref}}
+          name: Data Record Firmware ${{env.VERSION}}
+          draft: true
+          artifacts: "${{env.ARTIFACTS}}"
+          allowUpdates: true
