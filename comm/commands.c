@@ -105,6 +105,7 @@ static int nrf_flags = 0;
 
 // Static functions
 static void terminal_pin_unlock(int argc, const char **argv);
+static void terminal_pin_set(int argc, const char **argv);
 
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
@@ -115,6 +116,11 @@ void commands_init(void) {
 			"Temporarily unlock PIN locked firmware",
 			"[PIN code]",
 			terminal_pin_unlock);
+	terminal_register_command_callback(
+			"pin_set",
+			"Set PIN, or clear by setting 0",
+			"[Current PIN code] [New PIN code]",
+			terminal_pin_set);
 	is_initialized = true;
 }
 
@@ -264,10 +270,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			(packet_id != COMM_CUSTOM_APP_DATA) &&
 			(packet_id != COMM_LOCK_STATUS) &&
 			(packet_id != COMM_GET_QML_UI_HW) &&
-		        (packet_id != COMM_GET_QML_UI_APP) &&
-		        (packet_id != COMM_BMS_GET_VALUES) &&
+			(packet_id != COMM_GET_QML_UI_APP) &&
+			(packet_id != COMM_BMS_GET_VALUES) &&
 			(packet_id != COMM_CUSTOM_HW_DATA) &&
 			(packet_id != COMM_WRITE_LOCK) &&
+			(packet_id != COMM_TERMINAL_CMD) &&
+			(packet_id != COMM_TERMINAL_CMD_SYNC) &&
 			(packet_id != COMM_WRITE_UNLOCK_CMD)) {
 			//commands_printf("Blocked command: ID %d\n", packet_id);
 			return;
@@ -1295,6 +1303,12 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 
 	case COMM_TERMINAL_CMD_SYNC:
 		data[len] = '\0';
+		if (commands_check_writelock()) {
+			if (strncmp((char*)data, "pin", 3) > 0) {
+				// while PIN locked don't allow commands that don't start with "pin"
+				break;
+			}
+		}
 		chMtxLock(&terminal_mutex);
 		terminal_process_string((char*)data);
 		chMtxUnlock(&terminal_mutex);
@@ -2586,6 +2600,12 @@ static THD_FUNCTION(blocking_thread, arg) {
 
 		case COMM_TERMINAL_CMD:
 			data[len] = '\0';
+			if (commands_check_writelock()) {
+				if (strncmp((char*)data, "pin", 3) > 0) {
+					// while PIN locked don't allow commands that don't start with "pin"
+					break;
+				}
+			}
 			chMtxLock(&terminal_mutex);
 			terminal_process_string((char*)data);
 			chMtxUnlock(&terminal_mutex);
@@ -2784,7 +2804,6 @@ bool commands_check_writelock()
 		writelock_pin = conf_general_get_writelock_pin();
 		writelock = conf_general_is_locked_on_boot();
 		is_lock_initialized = true;
-		
 	}
 	return writelock;
 }
@@ -2795,10 +2814,12 @@ static void terminal_pin_unlock(int argc, const char **argv) {
 		sscanf(argv[1], "%d", &pin);
 		systime_t current_time = chVTGetSystemTimeX();
 		if ((pin == (int)writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
-			writelock = false;
-			writelock_last_failed_pin_attempt = 0;
-			writelock_disabled_last_cmd=!writelock;
-			commands_printf("PIN lock temporarily disabled.\n");
+			if (pin != 0) {
+				writelock = !writelock;
+				writelock_last_failed_pin_attempt = 0;
+				writelock_disabled_last_cmd=!writelock;
+				commands_printf("PIN lock %sabled.\n", writelock ? "en" : "temporarily dis");
+			}
 			return;
 		}
 		if(pin != (int)writelock_pin_prev) {
@@ -2808,6 +2829,46 @@ static void terminal_pin_unlock(int argc, const char **argv) {
 		writelock_pin_prev = pin;
 	} else {
 		commands_printf("This command requires one argument.\n");
+	}
+}
+
+static void terminal_pin_set(int argc, const char **argv) {
+	if (argc == 3) {
+		int old_pin = 0;
+		int new_pin = 0;
+		sscanf(argv[1], "%d", &old_pin);
+		sscanf(argv[2], "%d", &new_pin);
+		systime_t current_time = chVTGetSystemTimeX();
+        if ((new_pin == 0) && (argv[2][0] != '0')) {
+            // make sure the user actually entered '0'
+            new_pin = -1;
+        }
+		if ((old_pin == (int)writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
+            if ((new_pin >= 0) && (new_pin < 10000)) {
+                // new pin has been successfully set
+                writelock = new_pin != 0;
+                // write new pin to eeprom
+                conf_general_set_writelock_pin(new_pin, true);
+                writelock_pin = conf_general_get_writelock_pin();
+                writelock_last_failed_pin_attempt = 0;
+                writelock_disabled_last_cmd=!writelock;
+                is_lock_initialized = true;
+                commands_printf("PIN-lock has been %s.\n", writelock ? "activated" : "removed");
+                return;
+            }
+			commands_printf("Error: Valid PINs are numbers between 1 and 9999, 0 to remove PIN.\n");
+			return;
+		}
+		if(old_pin != (int)writelock_pin_prev) {
+			writelock_pin_attempt_cooldown*=2;
+			writelock_last_failed_pin_attempt = chVTGetSystemTimeX();
+		}
+		writelock_pin_prev = old_pin;
+	} else {
+		commands_printf("This command requires two arguments:\n"
+                        "Pass the existing PIN and the new PIN (1..9999) you would like to set.\n"
+                        "When using for the first time the existing PIN is 0.\n"
+                        "Passing 0 as the new PIN removes the pinlock.\n");
 	}
 }
 
