@@ -57,10 +57,10 @@ void hw_Thor_buzzer_init(void) {
 	//Start the buzzer and beep it
 	pwm_servo_init((uint32_t)4000, (float)0.5f);
 	EXT_BUZZER_ON();
-    chThdSleepMilliseconds(400);
+	chThdSleepMilliseconds(400);
 	EXT_BUZZER_OFF();
 
-    chThdSleepMilliseconds(1000);
+	chThdSleepMilliseconds(1000);
 }
 
 static void beep_off(void)
@@ -153,18 +153,11 @@ void hw_init_gpio(void) {
 	palSetPadMode(GPIOC, 4, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOC, 5, PAL_MODE_INPUT_ANALOG);
 
-	terminal_register_command_callback(
-			"test_button",
-			"Try sampling the shutdown button",
-			0,
-			terminal_button_test);
-
-
 	//Start the buzzer and beep it
 	pwm_servo_init((uint32_t)4000, (float)0.5f);
 	EXT_BUZZER_ON();
-    chThdSleepMilliseconds(100);
-    EXT_BUZZER_OFF();
+	chThdSleepMilliseconds(100);
+	EXT_BUZZER_OFF();
 }
 
 void hw_setup_adc_channels(void) {
