@@ -20,8 +20,6 @@
 #ifndef HW_Thor301_Core_H_
 #define HW_Thor301_Core_H_
 
-#include "pwm_servo.h"
-
 // HW properties
 #define HW_HAS_3_SHUNTS
 #define HW_HAS_PHASE_FILTERS
