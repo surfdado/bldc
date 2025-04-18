@@ -118,7 +118,7 @@
 
 // Component parameters (can be overridden)
 #ifndef V_REG
-#define V_REG					3.38
+#define V_REG					3.4
 #endif
 #ifndef VIN_R1
 #define VIN_R1					187000.0
@@ -257,10 +257,10 @@
 
 // Default setting overrides
 #ifndef MCCONF_L_MIN_VOLTAGE
-#define MCCONF_L_MIN_VOLTAGE			12.0		// Minimum input voltage
+#define MCCONF_L_MIN_VOLTAGE			30.0		// Minimum input voltage
 #endif
 #ifndef MCCONF_L_MAX_VOLTAGE
-#define MCCONF_L_MAX_VOLTAGE			140.0	// Maximum input voltage
+#define MCCONF_L_MAX_VOLTAGE			142.0	// Maximum input voltage
 #endif
 #ifndef MCCONF_DEFAULT_MOTOR_TYPE
 #define MCCONF_DEFAULT_MOTOR_TYPE		MOTOR_TYPE_FOC
@@ -284,16 +284,15 @@
 // Setting limits
 #define HW_LIM_CURRENT			-200.0, 200.0
 #define HW_LIM_CURRENT_IN		-150.0, 150.0
-#define HW_LIM_CURRENT_ABS		0.0, 300.0
-#define HW_LIM_VIN			11.0, 145.0
+#define HW_LIM_CURRENT_ABS		0.0, 250.0
+#define HW_LIM_VIN			25.0, 145.0
 #define HW_LIM_ERPM			-200e3, 200e3
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 0.99
 #define HW_LIM_TEMP_FET			-40.0, 110.0
 
 // HW-specific functions
-//float hw_ENNOID_100_125_get_temp(void);
 bool hw_sample_shutdown_button(void);
 
-#endif /* HW_ENNOID_100_125_H_ */
+#endif
 
