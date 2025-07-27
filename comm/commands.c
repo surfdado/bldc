@@ -275,6 +275,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			(packet_id != COMM_BMS_GET_VALUES) &&
 			(packet_id != COMM_CUSTOM_HW_DATA) &&
 			(packet_id != COMM_WRITE_LOCK) &&
+			(packet_id != COMM_SET_CHUCK_DATA) &&
 			(packet_id != COMM_TERMINAL_CMD) &&
 			(packet_id != COMM_TERMINAL_CMD_SYNC) &&
 			(packet_id != COMM_WRITE_UNLOCK_CMD)) {
