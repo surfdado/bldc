@@ -303,6 +303,24 @@ void shutdown_init(void) {
 	}
 }
 
+void shutdown_set_sampling_disabled(bool disabled) {
+	if (!m_init_done) {
+		return;
+	}
+
+	chMtxLock(&m_sample_mutex);
+	m_sampling_disabled = disabled;
+	chMtxUnlock(&m_sample_mutex);
+}
+
+bool shutdown_button_is_pressed() {
+    bool is_pressed;
+    chMtxLock(&m_sample_mutex);
+    is_pressed = power_key_pressed_ms > 30;
+	chMtxUnlock(&m_sample_mutex);
+    return is_pressed;
+}
+
 void shutdown_reset_timer(void) {
 	m_inactivity_time = 0.0;
 }
@@ -351,6 +369,8 @@ static THD_FUNCTION(shutdown_thread, arg) {
 		float dt = (float)chVTTimeElapsedSinceX(last_iteration_time) / (float)CH_CFG_ST_FREQUENCY;
 		last_iteration_time = chVTGetSystemTimeX();
 
+		chMtxLock(&m_sample_mutex);
+
 		//Check power button.
 		//Because the low level of power key is about 1V, high is 3.3v by its hardware design.
 		//This 1.0V low signal voltage maybe can not to make the MCU to recognize it as 0, so it needs a workaround.
@@ -376,6 +396,11 @@ static THD_FUNCTION(shutdown_thread, arg) {
 	        power_key_io_released = false;
 	        UBOX_POWER_KEY_IO_PULL_LOW();//Pre-pull down the open drain configured IO, to make this IO read as 0
 	    }
+		if (m_sampling_disabled) {
+			chMtxUnlock(&m_sample_mutex);
+			chThdSleepMilliseconds(10);
+			continue;
+		}
 
 	    if(power_key_type == power_key_type_undecided) {
 			if(sys_time_ms < 1000) {

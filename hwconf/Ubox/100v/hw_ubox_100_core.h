@@ -36,6 +36,8 @@
 #error "Must define hardware type"
 #endif
 
+#define SHUTDOWN_SET_SAMPLING_DISABLED shutdown_set_sampling_disabled
+
 // HW properties
 #define HW_HAS_3_SHUNTS
 #define INVERTED_SHUNT_POLARITY
