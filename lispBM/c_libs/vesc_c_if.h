@@ -669,6 +669,7 @@ typedef struct {
 	void (*thread_set_priority)(int priority);
 	// Disable shutdown (for hw with momentary button / auto shutdown support)
 	void (*shutdown_disable)(bool disable);
+	bool (*power_button_pressed)(void);
 } vesc_c_if;
 
 typedef struct {

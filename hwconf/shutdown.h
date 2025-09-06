@@ -30,7 +30,9 @@
 #define SHUTDOWN_BUTTON_PRESSED				shutdown_button_pressed()
 #define SHUTDOWN_SET_SAMPLING_DISABLED(d)	shutdown_set_sampling_disabled(d)
 #else
+#ifndef SHUTDOWN_BUTTON_PRESSED
 #define SHUTDOWN_BUTTON_PRESSED				false
+#endif
 #ifndef SHUTDOWN_SET_SAMPLING_DISABLED
 #define SHUTDOWN_SET_SAMPLING_DISABLED(d)	(void)d
 #endif

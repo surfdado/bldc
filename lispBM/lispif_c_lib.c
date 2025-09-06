@@ -714,6 +714,10 @@ static void lib_shutdown_disable(bool disable) {
 	SHUTDOWN_SET_SAMPLING_DISABLED(disable);
 }
 
+static bool lib_power_button_pressed(void) {
+	return SHUTDOWN_BUTTON_PRESSED;
+}
+
 lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 	lbm_value res = lbm_enc_sym(SYM_EERROR);
 
@@ -1053,6 +1057,9 @@ lbm_value ext_load_native_lib(lbm_value *args, lbm_uint argn) {
 		// 6.06+
 		cif.cif.thread_set_priority = lib_thread_set_priority;
 		cif.cif.shutdown_disable = lib_shutdown_disable;
+
+		// 7.0+
+		cif.cif.power_button_pressed = lib_power_button_pressed;
 
 		lib_init_done = true;
 	}

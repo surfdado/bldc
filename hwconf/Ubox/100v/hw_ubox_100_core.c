@@ -314,14 +314,6 @@ void shutdown_set_sampling_disabled(bool disabled) {
 	chMtxUnlock(&m_sample_mutex);
 }
 
-bool shutdown_button_is_pressed() {
-    bool is_pressed;
-    chMtxLock(&m_sample_mutex);
-    is_pressed = power_key_pressed_ms > 30;
-	chMtxUnlock(&m_sample_mutex);
-    return is_pressed;
-}
-
 void shutdown_reset_timer(void) {
 	m_inactivity_time = 0.0;
 }
@@ -361,6 +353,15 @@ typedef enum {
 static enPOWER_KEY_TYPE power_key_type = power_key_type_undecided;
 static uint32_t power_key_pressed_ms = 0;
 static bool power_key_pressed_when_power_on = false;
+
+bool shutdown_button_pressed(void)
+{
+    bool is_pressed;
+    chMtxLock(&m_sample_mutex);
+    is_pressed = power_key_pressed_ms > 30;
+	chMtxUnlock(&m_sample_mutex);
+    return is_pressed;
+}
 
 static THD_FUNCTION(shutdown_thread, arg) {
 	(void)arg;
