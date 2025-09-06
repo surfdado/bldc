@@ -24,6 +24,7 @@
 #include "utils_math.h"
 #include <math.h>
 #include "mc_interface.h"
+#include "mcpwm_foc.h"
 
 #include "shutdown.h"
 #include "app.h"
@@ -338,7 +339,14 @@ bool do_shutdown(bool resample) {
 	(void)resample;
 	conf_general_store_backup_data();
 
-	chThdSleepMilliseconds(100);
+    mcpwm_foc_play_tone(0, 1568, 1.1);
+	chThdSleepMilliseconds(30);
+    mcpwm_foc_play_tone(0, 1318, 1);
+	chThdSleepMilliseconds(30);
+    mcpwm_foc_play_tone(0, 1046.5, 0.9);
+	chThdSleepMilliseconds(30);
+    mcpwm_foc_stop_audio(true);
+
 	DISABLE_GATE();
 	UBOX_POWER_EN_OFF();
 	return true;
