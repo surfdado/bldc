@@ -547,6 +547,10 @@
 #define HW_PERMANENT_NRF_FAILED_HOOK()
 #endif
 
+#ifndef REJECT_FLASH_LOADING
+#define REJECT_FLASH_LOADING false
+#endif
+
 #ifndef HW_EARLY_INIT
 #define HW_EARLY_INIT()
 #endif
@@ -727,5 +731,6 @@ void hw_stop_i2c(void);
 void hw_try_restore_i2c(void);
 uint8_t hw_id_from_uuid(void);
 uint8_t hw_id_from_pins(void);
+bool hw_reject_flash_loading(void);
 
 #endif /* HW_H_ */

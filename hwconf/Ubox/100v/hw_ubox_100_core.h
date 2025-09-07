@@ -38,6 +38,8 @@
 
 #define SHUTDOWN_SET_SAMPLING_DISABLED shutdown_set_sampling_disabled
 #define SHUTDOWN_BUTTON_PRESSED shutdown_button_pressed()
+#define REJECT_FLASH_LOADING hw_reject_flash_loading()
+
 
 // HW properties
 #define HW_HAS_3_SHUNTS

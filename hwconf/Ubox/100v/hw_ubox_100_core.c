@@ -363,6 +363,12 @@ bool shutdown_button_pressed(void)
     return is_pressed;
 }
 
+bool hw_reject_flash_loading(void)
+{
+    // Don't allow loading firmware if the power button behaves like a momentary one
+    return power_key_type == power_key_type_momentary;
+}
+
 static THD_FUNCTION(shutdown_thread, arg) {
 	(void)arg;
 	chRegSetThreadName("Shutdown_ubox");
