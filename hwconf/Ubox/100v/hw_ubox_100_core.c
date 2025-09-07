@@ -416,6 +416,7 @@ static THD_FUNCTION(shutdown_thread, arg) {
 			chThdSleepMilliseconds(10);
 			continue;
 		}
+		chMtxUnlock(&m_sample_mutex);
 
 	    if(power_key_type == power_key_type_undecided) {
 			if(sys_time_ms < 1000) {
