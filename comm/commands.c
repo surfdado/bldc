@@ -569,6 +569,9 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		if (!REJECT_FLASH_LOADING) {
 			flash_res = flash_helper_erase_new_app(buffer_get_uint32(data, &ind));
 		}
+        else {
+            commands_printf("Firmware loading rejected by the controller.");
+        }
 		if (flash_res == FLASH_COMPLETE) {
 			// For now, erase the PIN as well - in the future we may want to let the PIN persist
 			conf_general_set_writelock_pin(0, false);

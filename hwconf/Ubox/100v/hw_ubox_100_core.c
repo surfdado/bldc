@@ -365,8 +365,12 @@ bool shutdown_button_pressed(void)
 
 bool hw_reject_flash_loading(void)
 {
+    bool do_reject = power_key_type == power_key_type_momentary;
+    if (do_reject)
+        commands_printf("Momentary button detected, firmware loading is not permitted!");
+
     // Don't allow loading firmware if the power button behaves like a momentary one
-    return power_key_type == power_key_type_momentary;
+    return do_reject;
 }
 
 static THD_FUNCTION(shutdown_thread, arg) {
@@ -501,7 +505,14 @@ static THD_FUNCTION(shutdown_thread, arg) {
 			}
 
 			if(power_key_pressed_ms > 2000) {
-				do_shutdown(true);
+                if (conf->shutdown_mode == SHUTDOWN_MODE_OFF_AFTER_10M) {
+                    mcpwm_foc_play_tone(0, 1046.5, 0.9);
+                    chThdSleepMilliseconds(30);
+                    mcpwm_foc_stop_audio(true);
+                }
+                if (conf->shutdown_mode == SHUTDOWN_MODE_OFF_AFTER_5H) {
+                    do_shutdown(true);
+                }
 			}
 	    } else {
 	    	m_inactivity_time += dt;
