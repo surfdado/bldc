@@ -144,6 +144,8 @@ __attribute__((section(".text2"))) void conf_general_init(void) {
 		if (g_backup.writelock_pin_init_flag == BACKUP_VAR_INIT_CODE) {
 			backup_tmp.writelock_pin_code = g_backup.writelock_pin_code;
 		}
+
+		backup_tmp.motor_disabled = g_backup.motor_disabled;
 	}
 
 	backup_tmp.odometer_init_flag = BACKUP_VAR_INIT_CODE;

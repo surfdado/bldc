@@ -729,6 +729,7 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			uint8_t status = 0;
 			status |= timeout_has_timeout();
 			status |= timeout_kill_sw_active() << 1;
+			status |= mc_interface_is_disabled() << 2;
 			send_buffer[ind++] = status;
 		}
 
@@ -2062,6 +2063,17 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 		commands_process_packet(data + 2, len - 2, reply_func);
 		recursion_depth--;
 	 } break;
+
+	case COMM_DISABLE: {
+		int32_t ind = 0;
+		uint8_t disable = data[ind++];
+
+		if (disable) {
+			mc_interface_disable();
+		} else {
+			mc_interface_enable();
+		}
+	} break;
 
 	// Blocking commands. Only one of them runs at any given time, in their
 	// own thread. If other blocking commands come before the previous one has

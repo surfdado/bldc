@@ -1129,6 +1129,8 @@ typedef enum {
 
 	COMM_MOTOR_ESTOP						= 159,
 
+	COMM_DISABLE							= 160,
+
 	// Pass-thru command similar to CAN_FORWARD - unlock for a single command
 	COMM_WRITE_UNLOCK_CMD                   = 200,
 } COMM_PACKET_ID;
@@ -1455,11 +1457,13 @@ typedef struct __attribute__((packed)) {
 	uint8_t can_baud;
 	uint8_t can_id;
 
-	uint8_t dummy;
-
 	uint32_t writelock_pin_init_flag;
 	uint32_t writelock_pin_code;
 
+	// Motor disable state
+	uint8_t motor_disabled;
+
+	uint8_t dummy[2];
 } backup_data;
 
 #endif /* DATATYPES_H_ */
