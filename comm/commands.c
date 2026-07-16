@@ -266,7 +266,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			(packet_id != COMM_GET_DECODED_BALANCE) &&
 			(packet_id != COMM_GET_STATS) &&
 			(packet_id != COMM_RESET_STATS) &&
-			(packet_id != COMM_SET_ODOMETER) &&
 			(packet_id != COMM_GET_CUSTOM_CONFIG) &&
 			(packet_id != COMM_CUSTOM_APP_DATA) &&
 			(packet_id != COMM_LOCK_STATUS) &&
@@ -281,18 +280,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			(packet_id != COMM_WRITE_UNLOCK_CMD)) {
 			//commands_printf("Blocked command: ID %d\n", packet_id);
 			return;
-		}
-		if (writelock && (packet_id == COMM_SET_ODOMETER)) {
-		  // Temporary back door, to allow unlocking from older VESC Tools...
-		  int32_t ind = 1;
-		  uint32_t odo_new = buffer_get_uint32(data, &ind);
-		  uint32_t odo_now = mc_interface_get_odometer() + 1000;
-		  // Writing the current odometer value removes the writelock
-		  if (abs(odo_now-odo_new) < 2000) {
-		    // the VESC App only allows setting of odometer in km/mi not in meters
-		    writelock = false;
-		  }
-		  return;
 		}
 		if ((packet_id == COMM_CUSTOM_APP_DATA) && (len > 2)) {
 			unsigned char magicnr = data[0];
@@ -2014,10 +2001,6 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			}
 			send_buffer[ind++] = (writelock_pin != 0);	// is a pin set?
 			send_buffer[ind++] = conf_general_is_locked_on_boot();
-
-			// TEMPORARY: for development only, pass the stored pin (obviously unsafe!)
-			send_buffer[ind++] = (writelock_pin >> 8) & 0xFF;
-			send_buffer[ind++] = writelock_pin & 0xFF;
 			reply_func(send_buffer, ind);
 		}
 	} break;
