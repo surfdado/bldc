@@ -1941,11 +1941,13 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 				int didset = 0;
 				systime_t current_time = chVTGetSystemTimeX();
 				if (old_pin == writelock_pin && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
-					// write new pin to eeprom
-					conf_general_set_writelock_pin(new_pin, lock_on_boot);
-					writelock_pin = conf_general_get_writelock_pin();
+					// Update in-RAM state before the (slow) eeprom write so that
+					// any USB commands_lock_writes(true) firing during the flash
+					// wait sees the new pin and restores writelock correctly.
+					writelock_pin = new_pin;
 					// when lock_on_boot is set, we immediately enable writelock
-					writelock = (writelock_pin > 0) && lock_on_boot;
+					writelock = (new_pin > 0) && lock_on_boot;
+					conf_general_set_writelock_pin(new_pin, lock_on_boot);
 					didset = 1;
 					writelock_last_failed_pin_attempt = 0;
 			  	}
@@ -2985,15 +2987,16 @@ static void terminal_pin_set(int argc, const char **argv) {
         }
 		if ((old_pin == (int)writelock_pin) && (writelock_last_failed_pin_attempt == 0 || ((current_time - writelock_last_failed_pin_attempt) > writelock_pin_attempt_cooldown))) {
             if ((new_pin >= 0) && (new_pin < 10000)) {
-                // new pin has been successfully set
+                // Update in-RAM state before the (slow) eeprom write so that
+                // any USB commands_lock_writes(true) firing during the flash
+                // wait sees the new pin and restores writelock correctly.
+                writelock_pin = new_pin;
                 writelock = new_pin != 0;
-                // write new pin to eeprom
                 conf_general_set_writelock_pin(new_pin, true);
-                writelock_pin = conf_general_get_writelock_pin();
                 writelock_last_failed_pin_attempt = 0;
-                writelock_disabled_last_cmd=!writelock;
+                writelock_disabled_last_cmd = !writelock;
                 is_lock_initialized = true;
-                commands_printf("PIN-lock has been %s.\n", writelock ? "activated" : "removed");
+                commands_printf("PIN-lock has been %s.\n", new_pin != 0 ? "activated" : "removed");
                 return;
             }
 			commands_printf("Error: Valid PINs are numbers between 1 and 9999, 0 to remove PIN.\n");
