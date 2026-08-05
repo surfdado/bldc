@@ -234,7 +234,7 @@
 #endif
 #ifndef MCCONF_L_MAX_VOLTAGE
 #ifdef ADV200
-#define MCCONF_L_MAX_VOLTAGE            95.0    // Maximum input voltage
+#define MCCONF_L_MAX_VOLTAGE            99.0    // Maximum input voltage
 #else
 #define MCCONF_L_MAX_VOLTAGE            95.0    // Maximum input voltage
 #endif
@@ -272,7 +272,7 @@
 #define HW_LIM_CURRENT          -180.0, 180.0
 #define HW_LIM_CURRENT_IN       -80.0, 80.0
 #define HW_LIM_CURRENT_ABS      0.0, 250.0
-#define HW_LIM_VIN              18.0, 95.0
+#define HW_LIM_VIN              18.0, 99.0
 #else
 #define HW_LIM_CURRENT          -200.0, 200.0
 #define HW_LIM_CURRENT_IN       -100.0, 100.0
